@@ -1,2 +1,2 @@
 #!/bin/bash
-python3 libs/tcp/setup.py bdist_wheel
+/venv/build/bin/python libs/tcp/setup.py bdist_wheel
