@@ -1,12 +1,15 @@
 version: '2'
 
 services:
-  builder:
-    image: python-commons-builder
-    volumes:
-      - ./libs:/libs  
-
   server:
     image: python-commons-server
     expose:
-      - 8000
+      - 8080
+    ports:
+      - 8080:8080
+
+  builder:
+    image: python-commons-builder
+    volumes:
+      - .:/python-commons
+

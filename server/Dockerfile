@@ -12,9 +12,8 @@ RUN pyvenv /venv/build && \
     source /venv/build/bin/activate && \
     pip install --upgrade pip && \
     pip install wheel && \
-    pip install twine
+    pip install pypiserver && \
+    pip install passlib && \
+    mkdir -p /wheelhouse
 
-VOLUME /python-commons
-WORKDIR /python-commons
-
-CMD ["./builder/build.sh"]
+CMD ["/venv/build/bin/pypi-server", "-p", "8080", "-P", ".", "-a", ".", "/wheelhouse"]
