@@ -2,8 +2,9 @@ FROM python:alpine
 
 RUN apk update && \
     apk add \
-        bash \
+        bash \ 
         ca-certificates \
+        curl \
         py-virtualenv \
         python3-dev \
         docker
@@ -17,4 +18,4 @@ RUN pyvenv /venv/build && \
 VOLUME /python-commons
 WORKDIR /python-commons
 
-CMD ["./builder/build.sh"]
+CMD ["./containers/package_builder/build.sh"]

@@ -1,0 +1,16 @@
+version: '2'
+
+services:
+  package_builder:
+    build: ../containers/package_builder
+    image: package_builder
+    volumes:
+      - ../:/python-commons
+    depends_on:
+      - pypi_server
+  
+  pypi_server:
+    build: ../containers/pypi_server
+    image: pypi_server
+    expose:
+      - 8080
