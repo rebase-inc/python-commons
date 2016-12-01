@@ -2,7 +2,7 @@
 
 build_images() {
   docker --log-level=warn build --quiet -t pycommons-builder builder/
-  docker --log-level=warn build --quiet -t pycommons-server server/
+  docker --log-level=warn build --quiet -t pycommons server/
   docker-compose -f $1 build
   docker-compose -f $1 up -d
 }

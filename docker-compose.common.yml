@@ -1,12 +1,13 @@
 version: '2'
 
 services:
-  pycommons_server:
-    image: pycommons-server
-    expose:
-      - 8080
 
   pycommons_builder:
     image: pycommons-builder
     volumes:
       - .:/python-commons
+
+  pycommons:
+    image: pycommons
+    expose:
+      - 8080
