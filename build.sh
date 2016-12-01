@@ -8,7 +8,7 @@ build_images() {
 RED="\033[0;31m"
 NC="\033[0m"
 
-type=${!#:-build}
+type=${BASH_ARGV[0]:-build}
 args=${@:1:$#-1}
 
 if [ $type = "devbuild" ]; then

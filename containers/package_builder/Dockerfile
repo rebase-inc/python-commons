@@ -15,7 +15,7 @@ RUN pyvenv /venv/build && \
     pip install wheel && \
     pip install twine
 
-VOLUME /python-commons
-WORKDIR /python-commons
+VOLUME /package_builder
+WORKDIR /package_builder
 
-CMD ["./containers/package_builder/build.sh"]
+CMD ["./build_packages.sh"]
