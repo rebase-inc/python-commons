@@ -18,7 +18,7 @@ class AsyncTCPCallbackServer(object):
           data = await stream.readline()
           if not data:
             break
-          callback_response = await self.callback(data)
+          callback_response = await self.memoized_callback(data)
           await stream.write(callback_response)
     except curio.CancelledError:
       sock._socket.close()
@@ -27,7 +27,7 @@ class AsyncTCPCallbackServer(object):
     if data in self._saved_responses:
       return self._saved_responses[data]
     else:
-      response = self._callback(data)
+      response = await self.callback(data)
       self._saved_responses[data] = response
       return response
 
