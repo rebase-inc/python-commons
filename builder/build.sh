@@ -8,6 +8,6 @@ for file in ./libs/* ; do
     /venv/build/bin/python $file/setup.py bdist_wheel
   fi
 done
-/venv/build/bin/twine upload --repository-url http://server:8080 --username foo --password bar dist/*
+/venv/build/bin/twine upload --repository-url http://pycommons_server:8080 --username foo --password bar dist/*
 rm -rf build/
 rm -rf *egg-info

@@ -1,15 +1,15 @@
 version: '2'
 
 services:
-  server:
+  pycommons_server:
     extends:
       file: docker-compose.common.yml
-      service: server
+      service: pycommons_server
     ports:
       - 8080:8080
 
-  builder:
+  pycommons_builder:
     extends:
       file: docker-compose.common.yml
-      service: builder
+      service: pycommons_builder
 

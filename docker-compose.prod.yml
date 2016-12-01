@@ -1,13 +1,13 @@
 version: '2'
 
 services:
-  server:
+  pycommons_server:
     extends:
       file: docker-compose.common.yml
-      service: server
+      service: pycommons_server
 
-  builder:
+  pycommons_builder:
     extends:
       file: docker-compose.common.yml
-      service: builder
+      service: pycommons_builder
 
