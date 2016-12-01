@@ -10,4 +10,4 @@ WORKING_DIR = os.path.dirname(os.path.realpath(__file__))
 with open(os.path.join(WORKING_DIR, 'requirements.txt')) as reqs:
   REQUIREMENTS = [ req for req in reqs ]
 
-setup(name='tcpcallbackserver', version='0.0.1', distclass = BinaryDistribution, install_requires = REQUIREMENTS)
+setup(name='asynctcp', version='0.0.2', distclass = BinaryDistribution, install_requires = REQUIREMENTS)
