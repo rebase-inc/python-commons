@@ -6,6 +6,8 @@ services:
     image: package_builder
     volumes:
       - ../:/python-commons
+    ports:
+      - 8080:8080
     depends_on:
       - pypi_server
   

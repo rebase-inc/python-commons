@@ -10,5 +10,3 @@ services:
     extends:
       file: build.yml
       service: pypi_server
-    ports:
-      - 8080:8080
