@@ -1,0 +1,13 @@
+version: '2'
+
+services:
+  server:
+    extends:
+      file: docker-compose.common.yml
+      service: server
+
+  builder:
+    extends:
+      file: docker-compose.common.yml
+      service: builder
+

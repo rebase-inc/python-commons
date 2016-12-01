@@ -1,0 +1,15 @@
+version: '2'
+
+services:
+  server:
+    extends:
+      file: docker-compose.common.yml
+      service: server
+    ports:
+      - 8080:8080
+
+  builder:
+    extends:
+      file: docker-compose.common.yml
+      service: builder
+
