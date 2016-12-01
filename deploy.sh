@@ -24,4 +24,3 @@ else
 fi
 
 build_images $dockerfile
-exit 0
