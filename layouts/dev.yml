@@ -1,0 +1,14 @@
+version: '2'
+
+services:
+  package_builder:
+    extends:
+      file: common.yml
+      service: package_builder
+  
+  pypi_server:
+    extends:
+      file: common.yml
+      service: pypi_server
+    ports:
+      - "8080:8080"

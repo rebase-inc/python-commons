@@ -1,0 +1,16 @@
+version: '2'
+
+services:
+  package_builder:
+    container_name: package_builder
+    build: ../services/package_builder
+    image: package_builder
+    volumes:
+      - ../services/package_builder:/package_builder
+  
+  pypi_server:
+    container_name: pypi_server
+    build: ../services/pypi_server
+    image: pypi_server
+    expose:
+      - "8080"

@@ -3,10 +3,10 @@ version: '2'
 services:
   package_builder:
     extends:
-      file: build.yml
+      file: common.yml
       service: package_builder
   
   pypi_server:
     extends:
-      file: build.yml
+      file: common.yml
       service: pypi_server
