@@ -14,11 +14,11 @@ def setup():
         log_handler = SysLogHandler(address=(environ['RSYSLOG_HOST'], environ['RSYSLOG_PORT']))
         log_handler.setFormatter(Formatter(fmt='%(levelname)s {%(processName)s[%(process)d]} %(message).900s'))
     else:
-        log_handler = streamhandler(sys.stdout)
-        log_handler.setformatter(formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        log_handler = StreamHandler(sys.stdout)
+        log_handler.setFormatter(Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
     logger = getLogger()
-    logger.setLevel(environ['LOG_LEVEL'])
+    logger.setLevel(environ['LOG_LEVEL'] if 'LOG_LEVEL' in environ else 'DEBUG')
     logger.addHandler(log_handler)
 
     from platform import python_version_tuple
