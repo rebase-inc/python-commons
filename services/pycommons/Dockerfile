@@ -17,6 +17,7 @@ RUN pyvenv /venv && \
     pip install pypiserver && \
     pip install passlib && \
     pip install twisted && \
+    pip install python-magic && \
     mkdir -p /wheelhouse && \
     mkdir -p /workdir
 

@@ -9,14 +9,14 @@ class TruncatingLogRecord(LogRecord):
     def getMessage(self):
         return super(TruncatingLogRecord, self).getMessage()[:RFC_SYSLOG_MAX_MSG_LENGTH]
 
-def setup():
-    log_handler = SysLogHandler(address=('logging_server', 514))
+def setup(rsyslog_host = 'logserver', rsyslog_port = 514, log_level = 'DEBUG'):
+    log_handler = SysLogHandler(address=(rsyslog_host, rsyslog_port))
     log_handler.setFormatter(Formatter(fmt='%(levelname)s {%(processName)s[%(process)d]} %(message).900s'))
     # log_handler = StreamHandler(sys.stdout)
     # log_handler.setFormatter(Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
     logger = getLogger()
-    logger.setLevel(environ['LOG_LEVEL'] if 'LOG_LEVEL' in environ else 'DEBUG')
+    logger.setLevel(log_level)
     logger.addHandler(log_handler)
 
     from platform import python_version_tuple
