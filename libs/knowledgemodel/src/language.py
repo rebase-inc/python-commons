@@ -34,7 +34,7 @@ class BlockingTCPClient(object):
 
 class LanguageKnowledge(object):
 
-    def __init__(self, name, parser_host, parser_port, private_namespace_generator, standard_library_namespace_generator, old_format = False):
+    def __init__(self, name, private_namespace_generator, standard_library_namespace_generator, old_format = False):
         self.private_module_use = defaultdict(list)
         self.standard_module_use = defaultdict(list)
         self.external_module_use = defaultdict(list)
@@ -42,20 +42,27 @@ class LanguageKnowledge(object):
         self.name = name
         self.private_namespace_generator = private_namespace_generator
         self.standard_library_namespace = standard_library_namespace_generator()
-        self.parser = BlockingTCPClient(parser_host, parser_port, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
         self.old_format = old_format
+        self.parser_client = None
+        self.impact_client = None
 
     def parse_code(self, code):
         if not code:
             return Counter()
-        use_dict = self.parser.send(code)
+        use_dict = self.parser_client.send(code)
         return Counter(json.loads(use_dict))
+
+    def get_impact(self, name):
+        if not name:
+            return 0
+        name = bytes(name.split('.')[0], 'utf-8')
+        return int(self.impact_client.send(name))
 
     @lru_cache()
     def get_private_namespace(self, tree):
         return self.private_namespace_generator(tree)
 
-    def add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after, allow_unrecognized = True):
+    def add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after):
         if self.old_format:
             return self._old_format_add_knowledge_data(authored_datetime, private_namespace, use_before, use_after, allow_unrecognized)
 
@@ -69,7 +76,7 @@ class LanguageKnowledge(object):
             elif next(filter(lambda m: module.startswith(m), self.standard_library_namespace), False):
                 self.standard_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
-            elif allow_unrecognized or next(filter(lambda m: module.startswith(m), self.external_module_use), False):
+            elif next(filter(lambda m: module.startswith(m), self.external_module_use), False) or self.get_impact(module):
                 self.external_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
     def _old_format_add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after, allow_unrecognized = True):
@@ -109,7 +116,9 @@ class PythonKnowledge(LanguageKnowledge):
     NAME = 'python'
 
     def __init__(self):
-        super().__init__(self.NAME, 'python_parser', 25252, lambda tree: self.get_python_module_names(tree, tree), self.get_python_standard_library_names)
+        super().__init__(self.NAME, lambda tree: self.get_python_module_names(tree, tree), self.get_python_standard_library_names)
+        self.parser_client = BlockingTCPClient('python_parser', 25252, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
+        self.impact_client = BlockingTCPClient('python_impact', 25000, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
 
     def get_python_module_names(self, tree, base_tree):
         known_modules = set()
@@ -140,7 +149,9 @@ class JavascriptKnowledge(LanguageKnowledge):
     NAME = 'javascript'
 
     def __init__(self):
-        super().__init__(self.NAME, 'javascript_parser', 7777, lambda tree: set(), self.get_javascript_standard_library_names)
+        super().__init__(self.NAME, lambda tree: set(), self.get_javascript_standard_library_names)
+        self.parser_client = BlockingTCPClient('javascript_parser', 7777, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
+        self.impact_client = BlockingTCPClient('javascript_impact', 9999, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
 
     @classmethod
     def get_javascript_standard_library_names(cls):
