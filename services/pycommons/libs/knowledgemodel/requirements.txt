@@ -1,0 +1,9 @@
+gitpython
+stdlib-list
+pip
+PyGithub
+python-magic
+asynctcp
+redis
+rq
+rsyslog

@@ -24,11 +24,11 @@ class AsyncTCPCallbackServer(object):
             async with sock:
                 stream = sock.as_stream()
                 while True:
-                    data = await stream.read()
+                    data = await stream.readline()
                     if not data:
                         break
                     try:
-                        callback_response = await self.memoized_callback(self.decode(data))
+                        callback_response = await self.memoized_callback(self.decode(data.strip()))
                     except Exception:
                         callback_response = ''
                     await stream.write(self.encode(callback_response))
@@ -73,17 +73,17 @@ class AsyncTCPCallbackServer(object):
 
 def run_simple_tcp_server(host, port, callback, encode, decode):
     async def simple_callback_client(client, addr):
-        stream = client.as_stream()
         while True:
-            data = await stream.read()
+            message_size = await client.recv(32)
+            data = await client.recv(int(message_size))
             if not data:
                 break
             try:
-                callback_response = await callback(decode(data))
+                callback_response = await callback(decode(data.strip()))
             except Exception:
                 LOGGER.exception('Unhandled callback exception')
                 callback_response = ''
-            await stream.write(encode(callback_response))
+            await client.send(encode(callback_response))
     run(tcp_server(host, port, simple_callback_client))
 
 class BlockingTCPClient(object):
@@ -107,12 +107,13 @@ class BlockingTCPClient(object):
         return self.decode(self.socket.recv(10000))
 
 if __name__ == '__main__':
-    # async def callback(data):
-    #   return 'this is a test!'
-    # AsyncTCPCallbackServer(callback = callback).run()
+    async def callback(data):
+      print('DATA IS "{}"'.format(str(data)))
+      return data
+    AsyncTCPCallbackServer(callback = callback).run()
     # client = BlockingTCPClient('dev', 25252, encode = base64.b64encode, decode = lambda data: data.decode())
     # result = client.send('\n'.encode('utf-8'))
     # print(result)
-    async def callback(data):
-        return 'this is a test!'
-    run_simple_tcp_server('localhost', 29292, callback, encode = lambda d: d.encode('utf-8'), decode = lambda d: d)
+    # async def callback(data):
+    #     return 'this is a test!'
+    # run_simple_tcp_server('localhost', 29292, callback, encode = lambda d: d.encode('utf-8'), decode = lambda d: d)

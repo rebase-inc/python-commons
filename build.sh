@@ -17,7 +17,7 @@ if [ $type = "dev" ]; then
 elif [ $type = "pro" ]; then
   echo -e "${RED}Building production environment...${NC}"
   build_images "-f" "layouts/pro.yml" $args
-else 
+else
   echo -e "${RED}Unknown build type $type${NC}"
   exit 1
 fi
