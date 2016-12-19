@@ -1,7 +1,7 @@
 FROM python:alpine
 
-RUN apk update && \
-    apk add \
+RUN apk --quiet update && \
+    apk --quiet add \
         bash \
         ca-certificates \
         gcc \
@@ -12,19 +12,20 @@ RUN apk update && \
 
 RUN pyvenv /venv && \
     source /venv/bin/activate && \
-    pip install --upgrade pip && \
-    pip install wheel && \
-    pip install pypiserver && \
-    pip install passlib && \
-    pip install twisted && \
-    pip install python-magic && \
-    mkdir -p /wheelhouse && \
-    mkdir -p /workdir
+    pip --quiet install --upgrade pip && \
+    pip --quiet install \
+      wheel \
+      pypiserver \
+      passlib \
+      twisted \
+      python-magic && \
+    mkdir -p /usr/src/app && \
+    mkdir -p /usr/src/app/build
 
-WORKDIR /workdir
+WORKDIR /usr/src/app
 
-COPY ./libs /workdir/libs
-COPY ./build_packages.sh /workdir/build_packages.sh
-RUN source /venv/bin/activate && ./build_packages.sh
+COPY ./libs ./libs
+COPY ./build_packages.sh ./build_packages.sh
+RUN source /venv/bin/activate && ./build_packages.sh && rm -rf /usr/src/app/libs
 
-CMD ["/venv/bin/pypi-server", "--server", "twisted", "--overwrite", "-p", "8080", "-P", ".", "-a", ".", "/wheelhouse"]
+CMD ["/venv/bin/pypi-server", "--server", "twisted", "--overwrite", "-p", "8080", "-P", ".", "-a", ".", "/usr/src/app/build"]

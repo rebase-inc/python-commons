@@ -70,7 +70,7 @@ class LanguageKnowledge(object):
                 self.standard_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
             elif allow_unrecognized or next(filter(lambda m: module.startswith(m), self.external_module_use), False):
-                self.external_module_use[module] += [ authored_datetime for _ in range(use_delta) ]
+                self.external_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
     def _old_format_add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after, allow_unrecognized = True):
         for module in (use_before | use_after):

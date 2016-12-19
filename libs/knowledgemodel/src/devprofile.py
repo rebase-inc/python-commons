@@ -1,5 +1,6 @@
 import re
 import logging
+import datetime
 import mimetypes
 
 from math import exp
@@ -33,11 +34,11 @@ class DeveloperProfile(object):
             knowledge_metrics[language] = defaultdict(float)
 
             for module, dates in knowledge.standard_module_use.items():
-                knowledge_metrics[language]['standard_library'] += reduce(lambda prev, curr: prev + self._activation(curr), dates)
+                knowledge_metrics[language]['standard_library'] += reduce(lambda prev, curr: prev + self._activation(curr), dates, 0.0)
 
             for module, dates in knowledge.external_module_use.items():
                 module = module.split('.')[0]
-                knowledge_metrics[language][module] += reduce(lambda prev, curr: prev + self._activation(curr), dates)
+                knowledge_metrics[language][module] += reduce(lambda prev, curr: prev + self._activation(curr), dates, 0.0)
 
         return knowledge_metrics
 
