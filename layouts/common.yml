@@ -1,9 +1,0 @@
-version: '2'
-
-services:
-  pycommons:
-    container_name: pycommons
-    build: ../services/pycommons
-    image: pycommons
-    expose:
-      - "8080"

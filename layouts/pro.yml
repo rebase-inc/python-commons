@@ -1,7 +1,0 @@
-version: '2'
-
-services:
-  pycommons:
-    extends:
-      file: common.yml
-      service: pycommons
