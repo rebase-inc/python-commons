@@ -76,6 +76,7 @@ class RateLimitAwareGithubAPI(Github):
 
 class RetryingRequester(Requester):
     def __init__(self, max_retries = 3, min_delay = 0.75, *args, **kwargs):
+        kwargs['per_page'] = 100
         super().__init__(*args, **kwargs)
         self.consecutive_failed_attempts = 0
         self.max_retries = max_retries
