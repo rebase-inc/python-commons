@@ -129,6 +129,8 @@ class PythonKnowledge(LanguageKnowledge):
                 if isinstance(entry, git.Tree):
                     new_modules = self.get_python_module_names(entry, base_tree)
                     known_modules.update(new_modules)
+                elif isinstance(entry, git.Submodule):
+                    LOGGER.debug('Skipping submodule')
                 elif entry.name == '__init__.py':
                     path_relative_to_repo = entry.path.replace(base_tree.path, '')
                     module_name = os.path.dirname(path_relative_to_repo).replace('/', '.')

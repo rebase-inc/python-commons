@@ -1,6 +1,6 @@
 import os
-import time
 import git
+import time
 import shutil
 import logging
 from datetime import datetime
@@ -27,18 +27,20 @@ class GithubCommitCrawler(object):
         for repo in user.get_repos():
             try:
                 if skip(repo):
-                    LOGGER.debug('Skipping repository "{}"'.format(repo.full_name))
+                    LOGGER.info('Skipping repository "{}"'.format(repo.full_name))
                 else:
                     repos_to_crawl.append(repo)
             except GithubException as e:
                 LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(user, repo, e))
         for repo in repos_to_crawl:
+            start = time.time()
             self.crawl_repo(user, repo)
+            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, user.login, time.time() - start))
 
     def crawl_repo(self, user, repo):
         all_commits = repo.get_commits(author = user.login)
         if not next(all_commits.__iter__(), None): # totalCount doesn't work
-            LOGGER.debug('Skipping {} repo (no commits found for user {})'.format(repo.name, user.login))
+            return
         else:
             cloned_repo = self.clone(repo)
             for commit in repo.get_commits(author = user.login):

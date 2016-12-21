@@ -1,4 +1,5 @@
 import re
+import time
 import logging
 import datetime
 import mimetypes
@@ -22,25 +23,27 @@ class DeveloperProfile(object):
         self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)')
 
     @classmethod
-    def _activation(cls, ordinal_date):
+    def knowledge_activation(cls, ordinal_date):
         # sigmoidal activation function that weights a commit based on the date it was committed
         number_of_days_ago = ordinal_date - datetime.datetime.now().toordinal()
         return (1 - exp(-4 - number_of_days_ago/400))
 
-    def get_computed_knowledge(self):
-        knowledge_metrics = dict()
+    def compute_rankings(self, callback = lambda language, module, dates: None):
+        ''' meant to be called by some external user with more knowledge about the world '''
+        start = time.time()
+        rankings = dict()
 
         for language, knowledge in self.languages.items():
-            knowledge_metrics[language] = defaultdict(float)
+            rankings[language] = defaultdict(float)
 
             for module, dates in knowledge.standard_module_use.items():
-                knowledge_metrics[language]['standard_library'] += reduce(lambda prev, curr: prev + self._activation(curr), dates, 0.0)
+                rankings[language]['standard_library'] += callback(language, 'standard_library', dates)
 
             for module, dates in knowledge.external_module_use.items():
                 module = module.split('.')[0]
-                knowledge_metrics[language][module] += reduce(lambda prev, curr: prev + self._activation(curr), dates, 0.0)
-
-        return knowledge_metrics
+                rankings[language][module] = callback(language, module, dates)
+        LOGGER.info('Computing rankings took {} seconds'.format(time.time() - start))
+        return rankings
 
     def guess_language(self, path):
         # For now, this returns a set with zero or one elements.
