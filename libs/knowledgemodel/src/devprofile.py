@@ -28,22 +28,25 @@ class DeveloperProfile(object):
         number_of_days_ago = ordinal_date - datetime.datetime.now().toordinal()
         return (1 - exp(-4 - number_of_days_ago/400))
 
-    def compute_rankings(self, callback = lambda language, module, dates: None):
+    def compute_knowledge(self, callback = lambda language, module, dates: None):
         ''' meant to be called by some external user with more knowledge about the world '''
         start = time.time()
-        rankings = dict()
+        knowledge = dict()
 
-        for language, knowledge in self.languages.items():
-            rankings[language] = defaultdict(float)
+        for language, module_types in self.languages.items():
+            knowledge[language] = defaultdict(float)
 
-            for module, dates in knowledge.standard_module_use.items():
-                rankings[language]['standard_library'] += callback(language, 'standard_library', dates)
+            dates = []
+            for module, _dates in module_types.standard_module_use.items():
+                dates += _dates
+            knowledge[language]['standard_library'] += callback(language, 'standard_library', dates)
 
-            for module, dates in knowledge.external_module_use.items():
+            for module, dates in module_types.external_module_use.items():
                 module = module.split('.')[0]
-                rankings[language][module] = callback(language, module, dates)
-        LOGGER.info('Computing rankings took {} seconds'.format(time.time() - start))
-        return rankings
+                knowledge[language][module] = callback(language, module, dates)
+
+        LOGGER.info('Computing knowledge took {} seconds'.format(time.time() - start))
+        return knowledge
 
     def guess_language(self, path):
         # For now, this returns a set with zero or one elements.
