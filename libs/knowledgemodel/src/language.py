@@ -64,36 +64,38 @@ class LanguageKnowledge(object):
 
     def add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after):
         if self.old_format:
-            return self._old_format_add_knowledge_data(authored_datetime, private_namespace, use_before, use_after, allow_unrecognized)
+            return self._old_format_add_knowledge_data(authored_datetime, private_namespace, use_before, use_after)
 
         for module in (use_before | use_after):
+            module = module.split('.')[0]
+
             use_delta = abs(use_before[module] - use_after[module])
             if not use_delta: continue
 
-            if next(filter(lambda m: module.startswith(m), private_namespace), False):
+            if module in private_namespace:
                 self.private_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
-            elif next(filter(lambda m: module.startswith(m), self.standard_library_namespace), False):
+            elif module in self.standard_library_namespace:
                 self.standard_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
-            elif next(filter(lambda m: module.startswith(m), self.external_module_use), False) or self.get_impact(module):
+            elif module in self.external_module_use or self.get_impact(module) > 0:
                 self.external_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
-    def _old_format_add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after, allow_unrecognized = True):
+    def _old_format_add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after):
         for module in (use_before | use_after):
             use_delta = abs(use_before[module] - use_after[module])
             if not use_delta: continue
 
             if module.startswith('0.'):
-                module = module.replace('0.', '')
+                module = module.replace('0.', '').split('.')[0]
                 self.private_module_use[module] += [ authored_datetime for _ in range(use_delta) ]
 
             elif module.startswith('1.'):
-                module = module.replace('1.', '')
+                module = module.replace('1.', '').split('.')[0]
                 self.standard_module_use[module] += [ authored_datetime for _ in range(use_delta) ]
 
-            elif allow_unrecognized or module.startswith('2.'):
-                module = module.replace('2.', '')
+            elif module.startswith('2.') or self.get_impact(module.replace('2.', '').split('.')[0]):
+                module = module.replace('2.', '').split('.')[0]
                 self.external_module_use[module] += [ authored_datetime for _ in range(use_delta) ]
 
     def analyze_diff(self, diff, commit):
