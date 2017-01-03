@@ -13,7 +13,6 @@ with open(os.path.join(WORKING_DIR, 'requirements.txt')) as reqs:
 setup(
     name='knowledgemodel', 
     version='0.0.1',
-    packages=['knowledgemodel'],
-    package_dir = {'knowledgemodel': 'src'},
+    py_modules=['__init__', 'devprofile', 'language'],
     install_requires = REQUIREMENTS
     )

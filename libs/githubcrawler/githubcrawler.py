@@ -10,6 +10,8 @@ from github.Requester import Requester
 from github.MainClass import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, DEFAULT_PER_PAGE
 
 LOGGER = logging.getLogger()
+logging.getLogger('github').setLevel(logging.WARNING)
+logging.getLogger('git').setLevel(logging.WARNING)
 
 class GithubCommitCrawler(object):
     def __init__(self, access_token, callback, small_repo_dir, large_repo_dir, repo_cutoff_in_bytes):

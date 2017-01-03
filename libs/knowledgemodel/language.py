@@ -1,36 +1,16 @@
 import os
 import json
 import base64
+import socket
 import logging
-from socket import socket, SHUT_RDWR
 
 from collections import defaultdict, Counter
 from functools import lru_cache
+from asynctcp import BlockingTcpClient
 
 import git
 
 LOGGER = logging.getLogger()
-
-# this is copied over from asynctcp library
-class BlockingTCPClient(object):
-    def __init__(self, host = 'localhost', port = 25252, encode = lambda d: d, decode = lambda d: d):
-        self.socket = socket()
-        self.encode = encode
-        self.decode = decode
-
-        self.read_stream = self.socket.makefile(mode = 'rb')
-        self.write_stream = self.socket.makefile(mode = 'wb')
-
-        self.socket.connect((host, port))
-
-    def close(self):
-        self.socket.shutdown(SHUT_RDWR)
-        self.socket.close()
-
-    def send(self, data):
-        self.write_stream.write(self.encode(data))
-        self.write_stream.flush()
-        return self.decode(self.socket.recv(10000))
 
 class LanguageKnowledge(object):
 
@@ -49,14 +29,19 @@ class LanguageKnowledge(object):
     def parse_code(self, code):
         if not code:
             return Counter()
-        use_dict = self.parser_client.send(code)
-        return Counter(json.loads(use_dict))
+        response = self.parser_client.send(json.dumps({ 'code': base64.b64encode(code).decode('utf-8') }))
+        return Counter(response['use_count'])
 
-    def get_impact(self, name):
-        if not name:
+    def get_impact(self, module):
+        if not module:
             return 0
-        name = bytes(name.split('.')[0], 'utf-8')
-        return int(self.impact_client.send(name))
+        module = module.split('.')[0]
+        try:
+            response = self.impact_client.send(json.dumps({ 'module': module }))
+        except socket.timeout as exc:
+            LOGGER.error('Returning fake impact score of 1, because impact client timed out')
+            return 1
+        return int(response['impact'])
 
     @lru_cache()
     def get_private_namespace(self, tree):
@@ -119,8 +104,8 @@ class PythonKnowledge(LanguageKnowledge):
 
     def __init__(self):
         super().__init__(self.NAME, lambda tree: self.get_python_module_names(tree, tree), self.get_python_standard_library_names)
-        self.parser_client = BlockingTCPClient('python_parser', 25252, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
-        self.impact_client = BlockingTCPClient('python_impact', 25000, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
+        self.parser_client = BlockingTcpClient('python_parser', 25252, timeout = 60)
+        self.impact_client = BlockingTcpClient('python_impact', 25000, timeout = 3)
 
     def get_python_module_names(self, tree, base_tree):
         known_modules = set()
@@ -154,8 +139,8 @@ class JavascriptKnowledge(LanguageKnowledge):
 
     def __init__(self):
         super().__init__(self.NAME, lambda tree: set(), self.get_javascript_standard_library_names)
-        self.parser_client = BlockingTCPClient('javascript_parser', 7777, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
-        self.impact_client = BlockingTCPClient('javascript_impact', 9999, encode = lambda d: base64.b64encode(d) + bytes('\n', 'utf-8'), decode = lambda d: d.decode())
+        self.parser_client = BlockingTcpClient('javascript_parser', 7777, timeout = 60)
+        self.impact_client = BlockingTcpClient('javascript_impact', 9999, timeout = 3)
 
     @classmethod
     def get_javascript_standard_library_names(cls):

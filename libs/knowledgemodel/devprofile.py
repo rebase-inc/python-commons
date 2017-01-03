@@ -23,13 +23,21 @@ class DeveloperProfile(object):
         self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)')
 
     @classmethod
-    def knowledge_activation(cls, ordinal_date):
+    def impact_by_day(cls, ordinal_date):
         # sigmoidal activation function that weights a commit based on the date it was committed
         number_of_days_ago = ordinal_date - datetime.datetime.now().toordinal()
         return (1 - exp(-4 - number_of_days_ago/400))
 
-    def compute_knowledge(self, callback = lambda language, module, dates: None):
-        ''' meant to be called by some external user with more knowledge about the world '''
+    def walk_knowledge(self, callback = lambda lang, mod, know: False):
+        if not self.knowledge:
+            self.compute_knowledge()
+        result = dict()
+        for language, modules in self.knowledge.items():
+            result[language] = dict()
+            for module, knowledge_level in modules.items():
+                result[language][module] = callback(language, module, knowledge_level)
+
+    def compute_knowledge(self):
         start = time.time()
         knowledge = dict()
 
@@ -39,13 +47,15 @@ class DeveloperProfile(object):
             dates = []
             for module, _dates in module_types.standard_module_use.items():
                 dates += _dates
-            knowledge[language]['standard_library'] += callback(language, 'standard_library', dates)
+            knowledge[language]['standard_library'] += reduce(lambda prev, curr: prev + self.impact_by_day(curr), dates, 0.0)
 
             for module, dates in module_types.external_module_use.items():
                 module = module.split('.')[0]
-                knowledge[language][module] = callback(language, module, dates)
+                knowledge[language][module] += reduce(lambda prev, curr: prev + self.compute_module_knowledge(curr), dates, 0.0)
 
         LOGGER.info('Computing knowledge took {} seconds'.format(time.time() - start))
+
+        self.knowledge = knowledge
         return knowledge
 
     def guess_language(self, path):
