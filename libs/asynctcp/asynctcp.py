@@ -18,11 +18,12 @@ class AsyncTcpCallbackServer(object):
         - callback should return a string type
     3) encodes string as utf-8 encoded bytestring and sends to client
     '''
-    def __init__(self, host, port, callback, memoized = True):
+    def __init__(self, host, port, callback, memoized = True, buffer_size = 1 << 13):
         self.host = host
         self.port = port
         # self.encode = encode
         # self.decode = decode
+        self.buffer_size = buffer_size
         self.memoized = memoized
         self.callback = callback
         self._saved_responses = {}
@@ -30,18 +31,16 @@ class AsyncTcpCallbackServer(object):
     async def run_client(self, sock, address):
         try:
             async with sock:
-                stream = sock.as_stream()
                 data_as_str = ''
                 while True:
-                    # we might be about to use stream.read here...I'm not sure. I've had mixed results
-                    rawdata = await sock.recv(4096)
+                    rawdata = await sock.recv(self.buffer_size)
                     if not rawdata:
                         return
                     data_as_str += rawdata.decode('utf-8').strip()
                     try:
                         callback_response = await self.memoized_callback(json.loads(data_as_str))
                         data_as_str = ''
-                        await stream.write(callback_response.encode('utf-8'))
+                        await sock.sendall(callback_response.encode('utf-8'))
                     except ValueError:
                         continue
         except CancelledError:
@@ -89,14 +88,16 @@ class AsyncTcpCallbackServer(object):
         return run(self.run_graceful_server())
 
 class BlockingTcpClient(object):
-    def __init__(self, host = 'localhost', port = 25252, json = True, timeout = 5):
+    def __init__(self, host = 'localhost', port = 25252, json = True, timeout = 5, buffer_size = 1 << 13):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.json = json
-        self.write_stream = self.socket.makefile(mode = 'w', encoding = 'utf-8')
         self.host = host
         self.port = port
-        self.socket.settimeout(timeout) 
+        self.buffer_size = buffer_size
+        self.socket.settimeout(timeout)
         self.socket.connect((host, port))
+        if not json:
+            raise NotImplementedError('Non JSON version not yet implemented')
 
     def close(self):
         try:
@@ -106,25 +107,21 @@ class BlockingTcpClient(object):
             pass
 
     def read(self):
-        if json:
-            response = ''
-            while True:
-                new_data = self.socket.recv(4096).decode('utf-8')
-                if not new_data:
-                    return
-                try:
-                    response += new_data
-                    response_as_object = json.loads(response)
-                    break
-                except ValueError:
-                    continue
-            return response_as_object
-        else:
-            return self.read_stream.readall()
+        response = ''
+        while True:
+            new_data = self.socket.recv(self.buffer_size).decode('utf-8')
+            if not new_data:
+                return
+            try:
+                response += new_data
+                response_as_object = json.loads(response)
+                break
+            except ValueError:
+                continue
+        return response_as_object
 
     def send(self, data):
-        self.write_stream.write(data)
-        self.write_stream.flush()
+        self.socket.sendall(data.encode('utf-8'))
         try:
             return self.read()
         except socket.timeout as exc:

@@ -13,7 +13,9 @@ LOGGER = logging.getLogger()
 logging.getLogger('github').setLevel(logging.WARNING)
 logging.getLogger('git').setLevel(logging.WARNING)
 
+
 class GithubCommitCrawler(object):
+
     def __init__(self, access_token, callback, small_repo_dir, large_repo_dir, repo_cutoff_in_bytes):
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
         self.oauth_clone_prefix = 'https://{access_token}@github.com'.format(access_token = access_token)
@@ -57,14 +59,16 @@ class GithubCommitCrawler(object):
         if os.path.isdir(repo_path):
             shutil.rmtree(repo_path)
         try:
+            LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if clone_base_dir == self.small_repo_dir else 'file'))
             return git.Repo.clone_from(url, repo_path)
         except git.exc.GitCommandError as e:
             if clone_base_dir == self.small_repo_dir:
-                LOGGER.exception('Failed to clone {} repository into memory ({}), trying to clone to disk...'.format(repo.name, e))
+                LOGGER.error('Failed to clone {} repository into memory ({}), trying to clone to disk...'.format(repo.name, e))
                 repo_path = os.path.join(self.large_repo_dir, repo.name)
                 return git.Repo.clone_from(url, repo_path)
             else:
                 raise e
+
 
 class RateLimitAwareGithubAPI(Github):
 
@@ -78,7 +82,9 @@ class RateLimitAwareGithubAPI(Github):
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
 
+
 class RetryingRequester(Requester):
+
     def __init__(self, max_retries = 3, min_delay = 0.75, *args, **kwargs):
         kwargs['per_page'] = 100
         super().__init__(*args, **kwargs)

@@ -51,7 +51,7 @@ class DeveloperProfile(object):
 
             for module, dates in module_types.external_module_use.items():
                 module = module.split('.')[0]
-                knowledge[language][module] += reduce(lambda prev, curr: prev + self.compute_module_knowledge(curr), dates, 0.0)
+                knowledge[language][module] += reduce(lambda prev, curr: prev + self.impact_by_day(curr), dates, 0.0)
 
         LOGGER.info('Computing knowledge took {} seconds'.format(time.time() - start))
 
