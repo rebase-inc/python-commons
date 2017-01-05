@@ -10,9 +10,10 @@ UNKNOWN_KEY = '__unknown__'
 TIME_REGULARIZATION = lambda daysago: max(0.1, (1 - math.exp(daysago / 200 - 2))) # TODO: Redesign and parameterize with environment variables
 BREADTH_REGULARIZATION = lambda knowledge: math.log1p(knowledge / float(os.environ['BREADTH_DISCOUNT'])) * (1 / math.log1p( 1 / float(os.environ['BREADTH_DISCOUNT'])))
 
+# TODO: Fix this class so it properly throws when not subclassed (proper ABC behavior)
 class KnowledgeLevel(defaultdict, metaclass = abc.ABCMeta):
 
-    @abc.abstractmethod        
+    @abc.abstractmethod
     def __init__(self, default_factory):
         super().__init__(default_factory)
 
@@ -71,7 +72,7 @@ class LanguageKnowledge(KnowledgeLevel):
         module_knowledge = { name: module.simple_projection for name, module in self.items() }
         module_knowledge[OVERALL_KEY] = sum(val for val in module_knowledge.values())
         return module_knowledge
-    
+
 class ModuleKnowledge(KnowledgeLevel):
 
     def __init__(self):
@@ -96,7 +97,7 @@ class Reference(datetime.date):
 
     def __new__(cls, date, *args):
         date = super().fromordinal(date) if isinstance(date, int) else date
-        return super(Reference, cls).__new__(cls, date.year, date.month, date.day) 
+        return super(Reference, cls).__new__(cls, date.year, date.month, date.day)
 
     @property
     def activation(self):
@@ -108,20 +109,22 @@ class Reference(datetime.date):
 if __name__ == '__main__':
     print('Breadth regularization of 1 is {}'.format(BREADTH_REGULARIZATION(1)))
     print('Breadth regularization of 2 is {}'.format(BREADTH_REGULARIZATION(2)))
+    print('Breadth regularization of 200 is {}'.format(BREADTH_REGULARIZATION(200)))
+    print('Breadth regularization of 400 is {}'.format(BREADTH_REGULARIZATION(400)))
     print()
-    
+
     person_1 = OverallKnowledge()
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
-    
+
     person_2 = OverallKnowledge()
     person_2.add_reference('python', 'socket', 'send', date = datetime.date.today(), count = 1)
     person_2.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_2.add_reference('python', 'collections', 'defaultdict', date = datetime.date.today(), count = 1)
     person_2.add_reference('python', 'collections', 'Counter', date = datetime.date.today(), count = 1)
-    
+
     person_3 = OverallKnowledge()
     person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
     person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
