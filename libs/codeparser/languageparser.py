@@ -56,5 +56,4 @@ class LanguageParser(metaclass = abc.ABCMeta):
         for module, differential_count in differential_counts.most_common():
             if not differential_count:
                 continue
-            print(self.language, *module.split('.'), authored_at, abs(differential_count))
             self.callback(self.language, *module.split('.'), date = authored_at, count = abs(differential_count))

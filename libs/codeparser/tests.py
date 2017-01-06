@@ -21,16 +21,26 @@ class TestCodeParser(unittest.TestCase):
     @classmethod
     def _append_uses(self, uses, *args, date, count):
         uses['.'.join(args)] = count
-    
+
     def setUp(self):
         self.uses = {}
         self.parser = CodeParser(callback = functools.partial(self._append_uses, self.uses))
 
     def test_analyze_diff(self):
-        tree_before = FakeGitTree(**{'foo.py': 'from unittest import TestCase', 'bar.py': 'from socket import socket'})
-        tree_after = FakeGitTree(**{'foo.py': 'from io import StringIO', 'bar.py': 'from socket import socket'})
+        tree_before = FakeGitTree(**{'foo.py': 'from unittest import TestCase'})
+        tree_after = FakeGitTree(**{'foo.py': 'from io import StringIO'})
         self.parser.analyze_code(tree_before, tree_after, 'foo.py', 'foo.py', datetime.date.today())
-    
+
+    def test_analyze_blob(self):
+        tree_after = FakeGitTree(**{'foo.py': 'from io import StringIO'})
+        self.parser.analyze_code(None, tree_after, None, 'foo.py', datetime.date.today())
+
+    def test_analyze_multiple_languages(self):
+        tree_before = FakeGitTree(**{'foo.py': 'from unittest import TestCase', 'foo.js': 'import React from \'react\''})
+        tree_after = FakeGitTree(**{'foo.py': 'from io import StringIO', 'foo.js': 'import { Component } from \'react\''})
+        self.parser.analyze_code(tree_before, tree_after, 'foo.py', 'foo.py', datetime.date.today())
+        self.parser.analyze_code(tree_before, tree_after, 'foo.js', 'foo.js', datetime.date.today())
+
     def tearDown(self):
         self.parser.close()
 
