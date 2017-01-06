@@ -103,7 +103,8 @@ class BlockingTcpClient(object):
         try:
             self.socket.shutdown(socket.SHUT_RDWR)
             self.socket.close()
-        except:
+        except Exception as exc:
+            LOGGER.exception(exc)
             pass
 
     def read(self):

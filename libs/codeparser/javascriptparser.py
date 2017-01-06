@@ -1,10 +1,12 @@
+from asynctcp import BlockingTcpClient
+
 from . import LanguageParser
 
-PARSER_HOST = 'javascript_parser'
+PARSER_HOST = 'localhost' #'javascript_parser'
 PARSER_PORT = 7777
-IMPACT_HOST = 'javascript_impact'
+IMPACT_HOST = 'localhost' #'javascript_impact'
 IMPACT_PORT = 9999
-STDLIB = set(module.split('.')[0] for module in [ 
+STDLIB = set(module.split('.')[0] for module in [
     'Infinity', 'NaN', 'undefined', 'null', 'eval', 'isFinite', 'isNaN', 'parseFloat',
     'parseInt', 'decodeURI', 'decodeURIComponent', 'encodeURI', 'encodeURIComponent', 'escape',
     'unescape', 'Object', 'Function', 'Boolean', 'Symbol', 'Error', 'EvalError', 'InternalError',
@@ -26,16 +28,19 @@ class JavascriptParser(LanguageParser):
         # it isn't found to be "relevant", we're not going to include it. However, this
         # may be useful in the future for things like understanding references.
         return super().get_context(tree, path)
-    
+
     @property
-    def parser(self):
+    def remote_parser(self):
         if not hasattr(self, '_parser'):
             self._parser = BlockingTcpClient(PARSER_HOST, PARSER_PORT, timeout = 60)
         return self._parser
 
+    def close(self):
+        super().close()
+
     def get_module_counts(self, tree, path):
         return super().get_module_counts(tree, path)
-    
+
     def check_relevance(self, module):
         return super().check_relevance(module) or module.split('.')[0] in self.stdlib
 

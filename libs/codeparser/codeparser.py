@@ -12,20 +12,21 @@ from . import PythonParser, JavascriptParser
 
 LOGGER = logging.getLogger()
 
-# knowledge = OverallKnowledge()
-# parser = CodeParser(add_reference = knowledge.add_reference)
-# crawler = GithubCommitCrawler(callback = parser.analyze_code)
-
 class CodeParser(object):
-    def __init__(self, add_reference):
+
+    @classmethod
+    def _log_callback(cls, *args, date, count):
+        LOGGER.debug(*args, date, count)
+
+    def __init__(self, callback = _log_callback):
         self.parsers = {}
-        for parser in [PythonParser, JavaScriptParser]:
-            self.parsers[parser.language] = parser(add_reference = add_reference)
+        for parser in [PythonParser, JavascriptParser]:
+            self.parsers[parser.language] = parser(callback = callback)
         self.mimetypes = mimetypes.MimeTypes(strict = False)
         self.mimetypes.types_map[0]['.jsx'] = self.mimetypes.types_map[1]['.js']
         self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)')
 
-    def parser(self, path):
+    def get_parser(self, path):
         mimetype, encoding = self.mimetypes.guess_type(path)
         if not mimetype:
             LOGGER.debug('Unrecognized file type at {}'.format(path))
@@ -41,6 +42,8 @@ class CodeParser(object):
 
     def analyze_code(self, tree_before, tree_after, path_before, path_after, authored_at):
         # we're going to assume the language doesn't change during the commit
-        self.parser(path_before or path_after).analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
+        self.get_parser(path_before or path_after).analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
 
-
+    def close(self):
+        for parser in self.parsers.values():
+            parser.close()

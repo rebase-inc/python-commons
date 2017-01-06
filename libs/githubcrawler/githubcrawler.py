@@ -24,7 +24,6 @@ class GithubCommitCrawler(object):
         self.large_repo_dir = large_repo_dir
         self.repo_cutoff_in_bytes = repo_cutoff_in_bytes
 
-
     def crawl_all_repos(self, skip = lambda repo: False, user = None):
         user = self.api.get_user(user or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
         repos_to_crawl = []
@@ -48,7 +47,7 @@ class GithubCommitCrawler(object):
         else:
             cloned_repo = self.clone(repo)
             for commit in repo.get_commits(author = user.login):
-                self.callback(cloned_repo.commit(commit.sha))
+                self.analyze_commit(cloned_repo.commit(commit.sha))
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
 
@@ -69,6 +68,33 @@ class GithubCommitCrawler(object):
             else:
                 raise e
 
+    def analyze_commit(self, commit):
+        if len(commit.parents) == 0:
+            return self.analyze_initial_commit(commit)
+        elif len(commit.parents) == 1:
+            return self.analyze_regular_commit(commit)
+        else:
+            return self.analyze_merge_commit(commit)
+
+    def analyze_regular_commit(self, commit):
+        for diff in commit.parents[0].diff(commit, create_patch = True):
+            tree_before = commit.parents[0].tree if not diff.new_file else None
+            tree_after = commit.tree[diff.b_path].data_stream.read() if not diff.deleted_file else None
+            path_before = diff.a_path
+            path_after = diff.b_path
+            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+
+    def analyze_initial_commit(self, commit):
+        for blob in commit.tree.traverse(predicate = lambda item, depth: item.type == 'blob'):
+            tree_before = None
+            tree_after = commit.tree
+            path_before = None
+            path_after = blob.path
+            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+
+    def analyze_merge_commit(self, commit):
+        LOGGER.debug('Skipping merge commit')
+
 
 class RateLimitAwareGithubAPI(Github):
 
@@ -78,12 +104,12 @@ class RateLimitAwareGithubAPI(Github):
         super().__init__(login_or_token=login_or_token, password=password, base_url=base_url,
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
-        self._Github__requester = RetryingRequester(login_or_token=login_or_token, password=password, base_url=base_url,
+        self._Github__requester = RateLimitAwareRequester(login_or_token=login_or_token, password=password, base_url=base_url,
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
 
 
-class RetryingRequester(Requester):
+class RateLimitAwareRequester(Requester):
 
     def __init__(self, max_retries = 3, min_delay = 0.75, *args, **kwargs):
         kwargs['per_page'] = 100

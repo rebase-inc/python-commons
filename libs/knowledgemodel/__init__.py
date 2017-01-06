@@ -1,1 +1,1 @@
-from .devprofile import DeveloperProfile
+from .knowledgemodel import KnowledgeModel
