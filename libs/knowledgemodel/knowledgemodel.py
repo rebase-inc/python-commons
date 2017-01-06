@@ -87,9 +87,35 @@ class Reference(datetime.date):
     @property
     def activation(self):
         daysago = (datetime.date.today() - self).days
-        return max(0.1, (1 - math.exp(daysago / 300 - 3)))
+        return max(0.1, 1 / (1 + math.exp(daysago / 300 - 4)))
 
 if __name__ == '__main__':
+    import numpy
+    from matplotlib import pyplot
+    today = datetime.date.today().toordinal()
+    def _make_fake_knowledge_by_date(ordinaldate):
+        k = KnowledgeModel()
+        k.add_reference('a','b','c', date = datetime.date.fromordinal(today + ordinaldate), count = 1)
+        return k.simple_projection['a'][OVERALL_KEY]
+    make_fake_knowledge_by_date = numpy.vectorize(_make_fake_knowledge_by_date)
+    dates = numpy.arange(-3600, 0, 10)
+    pyplot.plot(dates, make_fake_knowledge_by_date(dates))
+    pyplot.show()
+
+    import uuid
+    def _make_fake_knowledge_by_breadth(breadth_as_percentage, total_count = 2000):
+        k = KnowledgeModel()
+        unique_modules = max(int(breadth_as_percentage * total_count), 1)
+        extra_per = int((total_count - unique_modules) / unique_modules)
+        for _ in range(unique_modules):
+            k.add_reference('fakelang', uuid.uuid4(), date = datetime.date.today(), count = 1 + extra_per)
+        return k.simple_projection['fakelang'][OVERALL_KEY]
+    make_fake_knowledge_by_breadth = numpy.vectorize(_make_fake_knowledge_by_breadth)
+    percentages = numpy.arange(0, 0.6, 0.02)
+    pyplot.plot(percentages, make_fake_knowledge_by_breadth(percentages))
+    pyplot.show()
+
+
 
     person_1 = KnowledgeModel()
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
