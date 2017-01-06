@@ -13,40 +13,52 @@ LOGGER = logging.getLogger()
 logging.getLogger('github').setLevel(logging.WARNING)
 logging.getLogger('git').setLevel(logging.WARNING)
 
+DEFAULT_CONFIG = {
+        'tmpfs_dir': '/repos',
+        'fs_dir': '/bigrepos',
+        'tmpfs_cutoff': 262144000 # 250M
+        }
 
 class GithubCommitCrawler(object):
 
-    def __init__(self, access_token, callback, small_repo_dir, large_repo_dir, repo_cutoff_in_bytes):
+    def __init__(self, callback, access_token, config, username = None):
+        self._username = username
+        self.config = {**DEFAULT_CONFIG, **config}
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
         self.oauth_clone_prefix = 'https://{access_token}@github.com'.format(access_token = access_token)
         self.callback = callback
-        self.small_repo_dir = small_repo_dir
-        self.large_repo_dir = large_repo_dir
-        self.repo_cutoff_in_bytes = repo_cutoff_in_bytes
+        self.small_repo_dir = self.config['tmpfs_dir']
+        self.large_repo_dir = self.config['fs_dir']
+        self.repo_cutoff_in_bytes = self.config['tmpfs_cutoff']
 
-    def crawl_all_repos(self, skip = lambda repo: False, user = None):
-        user = self.api.get_user(user or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
+    @property
+    def user(self):
+        if not hasattr(self, '_user'):
+            self._user = self.api.get_user(self._username or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
+        return self._user
+
+    def crawl_all_repos(self, skip = lambda repo: False):
         repos_to_crawl = []
-        for repo in user.get_repos():
+        for repo in self.user.get_repos():
             try:
                 if skip(repo):
                     LOGGER.info('Skipping repository "{}"'.format(repo.full_name))
                 else:
                     repos_to_crawl.append(repo)
             except GithubException as e:
-                LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(user, repo, e))
+                LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(self.user.login, repo, e))
         for repo in repos_to_crawl:
             start = time.time()
-            self.crawl_repo(user, repo)
-            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, user.login, time.time() - start))
+            self.crawl_repo(repo)
+            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
 
-    def crawl_repo(self, user, repo):
-        all_commits = repo.get_commits(author = user.login)
+    def crawl_repo(self, repo):
+        all_commits = repo.get_commits(author = self.user.login)
         if not next(all_commits.__iter__(), None): # totalCount doesn't work
             return
         else:
             cloned_repo = self.clone(repo)
-            for commit in repo.get_commits(author = user.login):
+            for commit in repo.get_commits(author = self.user.login):
                 self.analyze_commit(cloned_repo.commit(commit.sha))
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
@@ -79,7 +91,7 @@ class GithubCommitCrawler(object):
     def analyze_regular_commit(self, commit):
         for diff in commit.parents[0].diff(commit, create_patch = True):
             tree_before = commit.parents[0].tree if not diff.new_file else None
-            tree_after = commit.tree[diff.b_path].data_stream.read() if not diff.deleted_file else None
+            tree_after = commit.tree if not diff.deleted_file else None
             path_before = diff.a_path
             path_after = diff.b_path
             self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)

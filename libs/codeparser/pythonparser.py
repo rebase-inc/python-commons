@@ -5,9 +5,9 @@ from stdlib_list import stdlib_list, long_versions
 
 from . import LanguageParser
 
-PARSER_HOST = 'localhost' #'python_parser'
+PARSER_HOST = 'python_parser'
 PARSER_PORT = 25252
-IMPACT_HOST = 'localhost' #'python_impact'
+IMPACT_HOST = 'python_impact'
 IMPACT_PORT = 25000
 
 class PythonParser(LanguageParser):
@@ -33,7 +33,7 @@ class PythonParser(LanguageParser):
         return super().get_module_counts(tree, path)
 
     def check_relevance(self, module):
-        return super().check_relevance(module) or module.split('.')[0] in self.stdlib
+        return module.split('.')[0] in self.stdlib or super().check_relevance(module)
 
     @property
     def relevance_checker(self):

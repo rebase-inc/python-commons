@@ -1,59 +1,23 @@
 import os
-import abc
+import json
 import math
+import time
+import boto3
+import logging
 import datetime
-from collections import defaultdict, Counter
+
+from typing import Union
+
+from .knowledgelevel import KnowledgeLevel
+from .knowledgeleaf import KnowledgeLeaf
 
 OVERALL_KEY = '__overall__'
-UNKNOWN_KEY = '__unknown__'
 
-TIME_REGULARIZATION = lambda daysago: max(0.1, (1 - math.exp(daysago / 200 - 2))) # TODO: Redesign and parameterize with environment variables
-BREADTH_REGULARIZATION = lambda knowledge: math.log1p(knowledge / float(os.environ['BREADTH_DISCOUNT'])) * (1 / math.log1p( 1 / float(os.environ['BREADTH_DISCOUNT'])))
+LOGGER = logging.getLogger()
+logging.getLogger('boto3').setLevel(logging.WARNING)
+logging.getLogger('botocore').setLevel(logging.WARNING)
 
-# TODO: Fix this class so it properly throws when not subclassed (proper ABC behavior)
-class KnowledgeLevel(defaultdict, metaclass = abc.ABCMeta):
-
-    @abc.abstractmethod
-    def __init__(self, default_factory):
-        super().__init__(default_factory)
-
-    @property
-    def reference_depth(self):
-        if issubclass(self.default_factory, KnowledgeLevel):
-            return 1 + self.default_factory().reference_depth
-        else:
-            return 1
-
-    @property
-    @abc.abstractmethod
-    def simple_projection(self):
-        pass
-
-    def add_reference(self, *args, date = None, count = 1):
-        args = args[0:self.reference_depth + 1]
-        args += tuple(UNKNOWN_KEY for _ in range(self.reference_depth - len(args))) # pad to make sure args is of correct length
-        self[args[0]].add_reference(*args[1:], date = date, count = count)
-
-    def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, dict.__repr__(self))
-
-class KnowledgeLeaf(list, metaclass = abc.ABCMeta):
-
-    @property
-    @abc.abstractmethod
-    def simple_projection(self):
-        pass
-
-    @abc.abstractmethod
-    def add_reference(self, *args, date = None, count = 1):
-        pass
-
-    @abc.abstractmethod
-    def __repr__(self):
-        return '{}({})'.format(self.__class__.__name__, list.__repr__(self))
-
-
-class OverallKnowledge(KnowledgeLevel):
+class KnowledgeModel(KnowledgeLevel):
 
     def __init__(self):
         super().__init__(LanguageKnowledge)
@@ -61,6 +25,29 @@ class OverallKnowledge(KnowledgeLevel):
     @property
     def simple_projection(self):
         return { name: language.simple_projection for name, language in self.items() }
+
+    def write_to_s3(self, username, bucket, s3config):
+        written_objects = {}
+        s3bucket = boto3.resource('s3', **s3config).Bucket(bucket)
+        knowledge_object = s3bucket.Object('users/{}'.format(username))
+        etag = knowledge_object.put(Body = json.dumps(self.simple_projection))['ETag']
+        written_objects[etag] = knowledge_object
+
+        for lang_name, lang_knowledge in self.items():
+            for mod_name, mod_knowledge in lang_knowledge.items():
+                prefix = 'leaderboard/{}/{}/{}'.format(lang_name, mod_name, username)
+                key = prefix + ':{:.2f}'.format(mod_knowledge.simple_projection)
+                map(lambda obj: obj.delete(), s3bucket.objects.filter(Prefix = prefix))
+                obj = s3bucket.Object(key = key)
+                etag = obj.put(Body = bytes('', 'utf-8'))['ETag']
+                written_objects[etag] = obj
+
+        start = time.time()
+        LOGGER.debug('Waiting for s3 writes to finish...')
+        for etag, obj in written_objects.items():
+            obj.wait_until_exists(IfMatch = etag)
+        LOGGER.debug('Writing all objects to s3 took {} seconds'.format(time.time() - start))
+
 
 class LanguageKnowledge(KnowledgeLevel):
 
@@ -80,18 +67,16 @@ class ModuleKnowledge(KnowledgeLevel):
 
     @property
     def simple_projection(self):
-        return BREADTH_REGULARIZATION(sum(submodule.simple_projection for submodule in self.values()))
+        return super().breadth_regularization(sum(submodule.simple_projection for submodule in self.values()))
 
 class SubmoduleKnowledge(KnowledgeLeaf):
 
     def add_reference(self, date = None, count = 1):
-        if not date:
-            raise Exception('Date must be provided!')
         self.extend([ Reference(date) ] * count)
 
     @property
     def simple_projection(self):
-        return BREADTH_REGULARIZATION(sum(ref.activation for ref in self))
+        return super().breadth_regularization(sum(ref.activation for ref in self))
 
 class Reference(datetime.date):
 
@@ -102,38 +87,52 @@ class Reference(datetime.date):
     @property
     def activation(self):
         daysago = (datetime.date.today() - self).days
-        return TIME_REGULARIZATION(daysago)
-
-
+        return max(0.1, (1 - math.exp(daysago / 300 - 3)))
 
 if __name__ == '__main__':
-    print('Breadth regularization of 1 is {}'.format(BREADTH_REGULARIZATION(1)))
-    print('Breadth regularization of 2 is {}'.format(BREADTH_REGULARIZATION(2)))
-    print('Breadth regularization of 200 is {}'.format(BREADTH_REGULARIZATION(200)))
-    print('Breadth regularization of 400 is {}'.format(BREADTH_REGULARIZATION(400)))
-    print()
 
-    person_1 = OverallKnowledge()
+    person_1 = KnowledgeModel()
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
 
-    person_2 = OverallKnowledge()
+    person_2 = KnowledgeModel()
     person_2.add_reference('python', 'socket', 'send', date = datetime.date.today(), count = 1)
     person_2.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
     person_2.add_reference('python', 'collections', 'defaultdict', date = datetime.date.today(), count = 1)
     person_2.add_reference('python', 'collections', 'Counter', date = datetime.date.today(), count = 1)
 
-    person_3 = OverallKnowledge()
+    person_3 = KnowledgeModel()
     person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
     person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
     person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
     person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
 
+    person_4 = KnowledgeModel()
+    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
+    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
+    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
+    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
+
+    person_5 = KnowledgeModel()
+    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
+    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
+    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
+    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
+
+    print('Person 1\'s knowledge (narrow) looks like {}'.format(person_1.simple_projection))
+    print()
     print('Person 1\'s overall knowledge (narrow) is {}'.format(person_1.simple_projection['python'][OVERALL_KEY]))
     print('Person 2\'s overall knowledge (broad) is {}'.format(person_2.simple_projection['python'][OVERALL_KEY]))
     print('Person 3\'s overall knowledge (narrow and a long time ago) is {}'.format(person_3.simple_projection['python'][OVERALL_KEY]))
+    print('Person 4\'s overall knowledge (narrow and year ago) is {}'.format(person_4.simple_projection['python'][OVERALL_KEY]))
+    print('Person 4\'s overall knowledge (narrow and two years ago) is {}'.format(person_5.simple_projection['python'][OVERALL_KEY]))
     print()
     print('Ratio of broad to narrow knowledge in this case is {}'.format(person_2.simple_projection['python'][OVERALL_KEY]/person_1.simple_projection['python'][OVERALL_KEY]))
     print()
+
+    # testing incorrect length references
+    person_3.add_reference('python', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
+    person_3.add_reference('python', 'socket', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
+

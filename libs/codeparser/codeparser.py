@@ -42,7 +42,9 @@ class CodeParser(object):
 
     def analyze_code(self, tree_before, tree_after, path_before, path_after, authored_at):
         # we're going to assume the language doesn't change during the commit
-        self.get_parser(path_before or path_after).analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
+        parser = self.get_parser(path_before or path_after)
+        if parser:
+            parser.analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
 
     def close(self):
         for parser in self.parsers.values():

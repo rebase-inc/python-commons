@@ -2,9 +2,9 @@ from asynctcp import BlockingTcpClient
 
 from . import LanguageParser
 
-PARSER_HOST = 'localhost' #'javascript_parser'
+PARSER_HOST = 'javascript_parser'
 PARSER_PORT = 7777
-IMPACT_HOST = 'localhost' #'javascript_impact'
+IMPACT_HOST = 'javascript_impact'
 IMPACT_PORT = 9999
 STDLIB = set(module.split('.')[0] for module in [
     'Infinity', 'NaN', 'undefined', 'null', 'eval', 'isFinite', 'isNaN', 'parseFloat',
@@ -42,7 +42,7 @@ class JavascriptParser(LanguageParser):
         return super().get_module_counts(tree, path)
 
     def check_relevance(self, module):
-        return super().check_relevance(module) or module.split('.')[0] in self.stdlib
+        return module.split('.')[0] in self.stdlib or super().check_relevance(module)
 
     @property
     def relevance_checker(self):
