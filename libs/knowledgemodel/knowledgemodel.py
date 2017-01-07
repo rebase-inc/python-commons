@@ -33,11 +33,12 @@ class KnowledgeModel(KnowledgeLevel):
         etag = knowledge_object.put(Body = json.dumps(self.simple_projection))['ETag']
         written_objects[etag] = knowledge_object
 
-        for lang_name, lang_knowledge in self.items():
+        for lang_name, lang_knowledge in self.simple_projection.items():
             for mod_name, mod_knowledge in lang_knowledge.items():
                 prefix = 'leaderboard/{}/{}/{}'.format(lang_name, mod_name, username)
-                key = prefix + ':{:.2f}'.format(mod_knowledge.simple_projection)
-                map(lambda obj: obj.delete(), s3bucket.objects.filter(Prefix = prefix))
+                for obj in s3bucket.objects.filter(Prefix = prefix):
+                    obj.delete()
+                key = prefix + ':{:.2f}'.format(mod_knowledge)
                 obj = s3bucket.Object(key = key)
                 etag = obj.put(Body = bytes('', 'utf-8'))['ETag']
                 written_objects[etag] = obj
