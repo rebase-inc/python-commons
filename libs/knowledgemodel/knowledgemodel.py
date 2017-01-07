@@ -100,6 +100,7 @@ if __name__ == '__main__':
     make_fake_knowledge_by_date = numpy.vectorize(_make_fake_knowledge_by_date)
     dates = numpy.arange(-3600, 0, 10)
     pyplot.plot(dates, make_fake_knowledge_by_date(dates))
+    pyplot.title('Knowledge by number of days ago')
     pyplot.show()
 
     import uuid
@@ -113,6 +114,17 @@ if __name__ == '__main__':
     make_fake_knowledge_by_breadth = numpy.vectorize(_make_fake_knowledge_by_breadth)
     percentages = numpy.arange(0, 0.6, 0.02)
     pyplot.plot(percentages, make_fake_knowledge_by_breadth(percentages))
+    pyplot.title('Knowledge by breadth as percentage')
+    pyplot.show()
+
+    def _make_fake_knowledge_by_count(count):
+        k = KnowledgeModel()
+        k.add_reference('a','b', date = datetime.date.today(), count = count)
+        return k.simple_projection['a'][OVERALL_KEY]
+    make_fake_knowledge_by_count = numpy.vectorize(_make_fake_knowledge_by_count)
+    counts = numpy.arange(0, 500, 10)
+    pyplot.plot(counts, make_fake_knowledge_by_count(counts))
+    pyplot.title('Knowledge by reference count')
     pyplot.show()
 
 
