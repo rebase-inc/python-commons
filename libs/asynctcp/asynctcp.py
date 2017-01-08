@@ -4,6 +4,7 @@ import socket
 import base64
 import logging
 
+from contextlib import suppress
 from signal import SIGTERM, SIGINT
 
 from curio import socket as curiosocket
@@ -95,17 +96,16 @@ class BlockingTcpClient(object):
         self.port = port
         self.buffer_size = buffer_size
         self.socket.settimeout(timeout)
+        LOGGER.info('trying to connect to host {} port {}'.format(host, port))
         self.socket.connect((host, port))
         if not json:
             raise NotImplementedError('Non JSON version not yet implemented')
 
     def close(self):
-        try:
+        with suppress(Exception):
             self.socket.shutdown(socket.SHUT_RDWR)
+        with suppress(Exception):
             self.socket.close()
-        except Exception as exc:
-            LOGGER.exception(exc)
-            pass
 
     def read(self):
         response = ''

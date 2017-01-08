@@ -23,23 +23,16 @@ class JavascriptParser(LanguageParser):
     language = 'javascript'
     stdlib = STDLIB
 
+    def __init__(self, callback):
+        super().__init__(callback)
+        self.parsers = []
+        self.parsers.append(BlockingTcpClient(PARSER_HOST, PARSER_PORT, timeout = 60))
+
     def get_context(self, tree, path):
         # skipping the context for now, because if something isn't standard library and
         # it isn't found to be "relevant", we're not going to include it. However, this
         # may be useful in the future for things like understanding references.
         return super().get_context(tree, path)
-
-    @property
-    def remote_parser(self):
-        if not hasattr(self, '_parser'):
-            self._parser = BlockingTcpClient(PARSER_HOST, PARSER_PORT, timeout = 60)
-        return self._parser
-
-    def close(self):
-        super().close()
-
-    def get_module_counts(self, tree, path):
-        return super().get_module_counts(tree, path)
 
     def check_relevance(self, module):
         return module.split('.')[0] in self.stdlib or super().check_relevance(module)

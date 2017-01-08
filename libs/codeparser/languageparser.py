@@ -5,6 +5,8 @@ import logging
 
 from collections import Counter
 
+from . import exceptions
+
 LOGGER = logging.getLogger()
 
 class LanguageParser(metaclass = abc.ABCMeta):
@@ -20,23 +22,29 @@ class LanguageParser(metaclass = abc.ABCMeta):
     def get_context(self, tree, path):
         return dict()
 
-    @property
-    @abc.abstractmethod
-    def remote_parser(self):
-        pass
+    def parse(self, code, context = None):
+        for index, parser in enumerate(self.parsers):
+            response = parser.send(json.dumps({ 'code': base64.b64encode(code).decode('utf-8'), 'context': context }))
+            if response and 'error' not in response:
+                break
+        else:
+            raise exceptions.UnparsableCode(self.language)
+        
+        # always try the last successful parser first on the next round
+        self.parsers.insert(0, self.parsers.pop(index))
+        return response
 
-    @abc.abstractmethod
     def close(self):
-        self.remote_parser.close()
         self.relevance_checker.close()
+        for parser in self.parsers:
+            parser.close()
 
-    @abc.abstractmethod
     def get_module_counts(self, tree, path):
         if not tree or not path:
             return None
         context = self.get_context(tree, path)
         code = tree[path].data_stream.read()
-        use_count = self.remote_parser.send(json.dumps({ 'code': base64.b64encode(code).decode('utf-8'), 'context': context }))['use_count']
+        use_count = self.parse(code, context)['use_count']
         return { name: count for name, count in use_count.items() if self.check_relevance(name) }
 
     @property

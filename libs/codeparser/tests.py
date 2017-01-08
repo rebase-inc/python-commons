@@ -41,6 +41,24 @@ class TestCodeParser(unittest.TestCase):
         self.parser.analyze_code(tree_before, tree_after, 'foo.py', 'foo.py', datetime.date.today())
         self.parser.analyze_code(tree_before, tree_after, 'foo.js', 'foo.js', datetime.date.today())
 
+    def test_analyze_unsupported_language(self):
+        tree_before = FakeGitTree(**{'foo.c': 'from unittest import TestCase', 'foo.js': 'import React from \'react\''})
+        tree_after = FakeGitTree(**{'foo.c': 'from io import StringIO', 'foo.js': 'import { Component } from \'react\''})
+        self.parser.analyze_code(tree_before, tree_after, 'foo.c', 'foo.c', datetime.date.today())
+        self.assertEqual(self.parser.health.unsupported['c'], 1)
+
+    def test_analyze_nonexistant_language(self):
+        tree_before = FakeGitTree(**{'foo.barbaz': 'from unittest import TestCase', 'foo.js': 'import React from \'react\''})
+        tree_after = FakeGitTree(**{'foo.barbaz': 'from io import StringIO', 'foo.js': 'import { Component } from \'react\''})
+        self.parser.analyze_code(tree_before, tree_after, 'foo.barbaz', 'foo.barbaz', datetime.date.today())
+        self.assertEqual(self.parser.health.unrecognized['.barbaz'], 1)
+    
+    def test_analyze_invalid_code(self):
+        tree_before = FakeGitTree(**{'foo.py': 'from unittest - import TestCase', 'foo.js': 'import React from \'react\''})
+        tree_after = FakeGitTree(**{'foo.py': 'from io import; StringIO', 'foo.js': 'import { Component } from \'react\''})
+        self.parser.analyze_code(tree_before, tree_after, 'foo.py', 'foo.py', datetime.date.today())
+        self.assertEqual(self.parser.health.unparsable['python'], 1)
+
     def tearDown(self):
         self.parser.close()
 

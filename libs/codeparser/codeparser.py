@@ -1,50 +1,44 @@
+import os
 import re
-import time
 import logging
-import datetime
 import mimetypes
 
-from math import exp
-from functools import reduce
-from collections import defaultdict
-
 from . import PythonParser, JavascriptParser
+from . import exceptions
+from . import ParserHealth
 
 LOGGER = logging.getLogger()
 
 class CodeParser(object):
 
-    @classmethod
-    def _log_callback(cls, *args, date, count):
-        LOGGER.debug(*args, date, count)
-
-    def __init__(self, callback = _log_callback):
+    def __init__(self, callback):
         self.parsers = {}
         for parser in [PythonParser, JavascriptParser]:
             self.parsers[parser.language] = parser(callback = callback)
         self.mimetypes = mimetypes.MimeTypes(strict = False)
-        self.mimetypes.types_map[0]['.jsx'] = self.mimetypes.types_map[1]['.js']
+        self.mimetypes.add_type('application/javascript','.jsx', strict = False)
         self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)')
+        self.health = ParserHealth()
+
+    def guess_language(self, path):
+        mimetype = self.mimetypes.guess_type(path)[0] or ''
+        match = self.mimetype_regex.match(mimetype)
+        if match:
+            return match.group('language')
+        else:
+            raise exceptions.UnrecognizedExtension(os.path.splitext(path)[-1])
 
     def get_parser(self, path):
-        mimetype, encoding = self.mimetypes.guess_type(path)
-        if not mimetype:
-            LOGGER.debug('Unrecognized file type at {}'.format(path))
-            return None
+        language = self.guess_language(path)
+        if language in self.parsers:
+            return self.parsers[language]
         else:
-            match = self.mimetype_regex.match(mimetype)
-            if match and match.group('language') in self.parsers:
-                return self.parsers[match.group('language')]
-            elif match:
-                LOGGER.debug('Skipping parsing {} because of missing language support'.format(match.group('language')))
-            else:
-                LOGGER.debug('Unrecognized mimetype of file {}'.format(path))
+            raise exceptions.MissingLanguageSupport(language)
 
     def analyze_code(self, tree_before, tree_after, path_before, path_after, authored_at):
-        # we're going to assume the language doesn't change during the commit
-        parser = self.get_parser(path_before or path_after)
-        if parser:
-            parser.analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
+        with self.health:
+            # we're going to assume the language doesn't change during the commit
+            self.get_parser(path_before or path_after).analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
 
     def close(self):
         for parser in self.parsers.values():
