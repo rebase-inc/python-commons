@@ -90,16 +90,14 @@ class AsyncTcpCallbackServer(object):
 
 class BlockingTcpClient(object):
     def __init__(self, host = 'localhost', port = 25252, json = True, timeout = 5, buffer_size = 1 << 13):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.json = json
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
+        self.socket = socket.create_connection((host, port), timeout = 3)
         self.socket.settimeout(timeout)
-        LOGGER.info('trying to connect to host {} port {}'.format(host, port))
-        self.socket.connect((host, port))
         if not json:
-            raise NotImplementedError('Non JSON version not yet implemented')
+            raise NotImplementedError('Non JSON version not implemented')
 
     def close(self):
         with suppress(Exception):

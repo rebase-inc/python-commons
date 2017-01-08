@@ -59,6 +59,11 @@ class TestCodeParser(unittest.TestCase):
         self.parser.analyze_code(tree_before, tree_after, 'foo.py', 'foo.py', datetime.date.today())
         self.assertEqual(self.parser.health.unparsable['python'], 1)
 
+    def test_switching_between_parsers(self):
+        tree_before = FakeGitTree(**{'py2.py': 'print \'hello\''})
+        tree_after = FakeGitTree(**{'py3.py': 'print(\'hello\')'})
+        self.parser.analyze_code(tree_before, tree_after, 'py2.py', 'py3.py', datetime.date.today())
+
     def tearDown(self):
         self.parser.close()
 
