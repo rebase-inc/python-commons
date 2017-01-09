@@ -13,61 +13,99 @@ LOGGER = logging.getLogger()
 logging.getLogger('github').setLevel(logging.WARNING)
 logging.getLogger('git').setLevel(logging.WARNING)
 
+DEFAULT_CONFIG = {
+        'tmpfs_dir': '/repos',
+        'fs_dir': '/bigrepos',
+        'tmpfs_cutoff': 262144000 # 250M
+        }
 
 class GithubCommitCrawler(object):
 
-    def __init__(self, access_token, callback, small_repo_dir, large_repo_dir, repo_cutoff_in_bytes):
+    def __init__(self, callback, access_token, config, username = None):
+        self._username = username
+        self.config = {**DEFAULT_CONFIG, **config}
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
         self.oauth_clone_prefix = 'https://{access_token}@github.com'.format(access_token = access_token)
         self.callback = callback
-        self.small_repo_dir = small_repo_dir
-        self.large_repo_dir = large_repo_dir
-        self.repo_cutoff_in_bytes = repo_cutoff_in_bytes
+        self.small_repo_dir = self.config['tmpfs_dir']
+        self.large_repo_dir = self.config['fs_dir']
+        self.repo_cutoff_in_bytes = self.config['tmpfs_cutoff']
 
+    @property
+    def user(self):
+        if not hasattr(self, '_user'):
+            self._user = self.api.get_user(self._username or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
+        return self._user
 
-    def crawl_all_repos(self, skip = lambda repo: False, user = None):
-        user = self.api.get_user(user or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
+    def crawl_all_repos(self, skip = lambda repo: False):
+        LOGGER.info('Crawling all repositories for github user {}'.format(self.user.login))
         repos_to_crawl = []
-        for repo in user.get_repos():
+        for repo in self.user.get_repos():
             try:
                 if skip(repo):
                     LOGGER.info('Skipping repository "{}"'.format(repo.full_name))
                 else:
                     repos_to_crawl.append(repo)
             except GithubException as e:
-                LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(user, repo, e))
+                LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(self.user.login, repo, e))
         for repo in repos_to_crawl:
             start = time.time()
-            self.crawl_repo(user, repo)
-            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, user.login, time.time() - start))
+            self.crawl_repo(repo)
+            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
 
-    def crawl_repo(self, user, repo):
-        all_commits = repo.get_commits(author = user.login)
+    def crawl_repo(self, repo):
+        all_commits = repo.get_commits(author = self.user.login)
         if not next(all_commits.__iter__(), None): # totalCount doesn't work
             return
         else:
             cloned_repo = self.clone(repo)
-            for commit in repo.get_commits(author = user.login):
-                self.callback(cloned_repo.commit(commit.sha))
+            for commit in repo.get_commits(author = self.user.login):
+                self.analyze_commit(cloned_repo.commit(commit.sha))
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
 
-    def clone(self, repo):
+    def clone(self, repo, force_to_fs = False):
         url = repo.clone_url.replace('https://github.com', self.oauth_clone_prefix, 1)
-        clone_base_dir = self.small_repo_dir if repo.size <= self.repo_cutoff_in_bytes else self.large_repo_dir
-        repo_path = os.path.join(clone_base_dir, repo.name)
+        base_dir = self.large_repo_dir if force_to_fs or repo.size >= self.repo_cutoff_in_bytes else self.small_repo_dir
+        repo_path = os.path.join(base_dir, repo.name)
         if os.path.isdir(repo_path):
             shutil.rmtree(repo_path)
         try:
-            LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if clone_base_dir == self.small_repo_dir else 'file'))
+            LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if base_dir == self.small_repo_dir else 'file'))
             return git.Repo.clone_from(url, repo_path)
         except git.exc.GitCommandError as e:
-            if clone_base_dir == self.small_repo_dir:
-                LOGGER.error('Failed to clone {} repository into memory ({}), trying to clone to disk...'.format(repo.name, e))
-                repo_path = os.path.join(self.large_repo_dir, repo.name)
-                return git.Repo.clone_from(url, repo_path)
+            if base_dir == self.small_repo_dir:
+                LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name, e))
+                return self.clone(repo, force_to_fs = True)
             else:
                 raise e
+
+    def analyze_commit(self, commit):
+        if len(commit.parents) == 0:
+            return self.analyze_initial_commit(commit)
+        elif len(commit.parents) == 1:
+            return self.analyze_regular_commit(commit)
+        else:
+            return self.analyze_merge_commit(commit)
+
+    def analyze_regular_commit(self, commit):
+        for diff in commit.parents[0].diff(commit, create_patch = True):
+            tree_before = commit.parents[0].tree if not diff.new_file else None
+            tree_after = commit.tree if not diff.deleted_file else None
+            path_before = diff.a_path
+            path_after = diff.b_path
+            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+
+    def analyze_initial_commit(self, commit):
+        for blob in commit.tree.traverse(predicate = lambda item, depth: item.type == 'blob'):
+            tree_before = None
+            tree_after = commit.tree
+            path_before = None
+            path_after = blob.path
+            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+
+    def analyze_merge_commit(self, commit):
+        LOGGER.debug('Skipping merge commit')
 
 
 class RateLimitAwareGithubAPI(Github):
@@ -78,12 +116,12 @@ class RateLimitAwareGithubAPI(Github):
         super().__init__(login_or_token=login_or_token, password=password, base_url=base_url,
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
-        self._Github__requester = RetryingRequester(login_or_token=login_or_token, password=password, base_url=base_url,
+        self._Github__requester = RateLimitAwareRequester(login_or_token=login_or_token, password=password, base_url=base_url,
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
 
 
-class RetryingRequester(Requester):
+class RateLimitAwareRequester(Requester):
 
     def __init__(self, max_retries = 3, min_delay = 0.75, *args, **kwargs):
         kwargs['per_page'] = 100
