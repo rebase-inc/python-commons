@@ -38,6 +38,7 @@ class GithubCommitCrawler(object):
         return self._user
 
     def crawl_all_repos(self, skip = lambda repo: False):
+        LOGGER.info('Crawling all repositories for github user {}'.format(self.user.login))
         repos_to_crawl = []
         for repo in self.user.get_repos():
             try:
@@ -63,20 +64,19 @@ class GithubCommitCrawler(object):
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
 
-    def clone(self, repo):
+    def clone(self, repo, force_to_fs = False):
         url = repo.clone_url.replace('https://github.com', self.oauth_clone_prefix, 1)
-        clone_base_dir = self.small_repo_dir if repo.size <= self.repo_cutoff_in_bytes else self.large_repo_dir
-        repo_path = os.path.join(clone_base_dir, repo.name)
+        base_dir = self.large_repo_dir if force_to_fs or repo.size >= self.repo_cutoff_in_bytes else self.small_repo_dir
+        repo_path = os.path.join(base_dir, repo.name)
         if os.path.isdir(repo_path):
             shutil.rmtree(repo_path)
         try:
             LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if clone_base_dir == self.small_repo_dir else 'file'))
             return git.Repo.clone_from(url, repo_path)
         except git.exc.GitCommandError as e:
-            if clone_base_dir == self.small_repo_dir:
-                LOGGER.error('Failed to clone {} repository into memory ({}), trying to clone to disk...'.format(repo.name, e))
-                repo_path = os.path.join(self.large_repo_dir, repo.name)
-                return git.Repo.clone_from(url, repo_path)
+            if base_dir == self.small_repo_dir:
+                LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk...'.format(repo.name, e))
+                return self.clone(repo, force_to_fs = True)
             else:
                 raise e
 

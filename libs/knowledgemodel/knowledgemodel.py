@@ -27,6 +27,8 @@ class KnowledgeModel(KnowledgeLevel):
         return { name: language.simple_projection for name, language in self.items() }
 
     def write_to_s3(self, username, bucket, s3config):
+        start = time.time()
+        LOGGER.debug('Writing knowledge for user {} to s3'.format(username))
         written_objects = {}
         s3bucket = boto3.resource('s3', **s3config).Bucket(bucket)
         knowledge_object = s3bucket.Object('users/{}'.format(username))
@@ -43,11 +45,9 @@ class KnowledgeModel(KnowledgeLevel):
                 etag = obj.put(Body = bytes('', 'utf-8'))['ETag']
                 written_objects[etag] = obj
 
-        start = time.time()
-        LOGGER.debug('Waiting for s3 writes to finish...')
         for etag, obj in written_objects.items():
             obj.wait_until_exists(IfMatch = etag)
-        LOGGER.debug('Writing all objects to s3 took {} seconds'.format(time.time() - start))
+        LOGGER.debug('Writing knowledge to s3 took {} seconds'.format(time.time() - start))
 
 
 class LanguageKnowledge(KnowledgeLevel):
