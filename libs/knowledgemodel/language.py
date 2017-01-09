@@ -14,14 +14,22 @@ LOGGER = logging.getLogger()
 
 class LanguageKnowledge(object):
 
-    def __init__(self, name, private_namespace_generator, standard_library_namespace_generator, old_format = False):
+    def __init__(
+        self,
+        name,
+        private_namespace_generator,
+        standard_library_namespace_generator,
+        grammar_namespace_generator,
+        old_format=False
+    ):
+        self.grammar_use = defaultdict(list)
         self.private_module_use = defaultdict(list)
         self.standard_module_use = defaultdict(list)
         self.external_module_use = defaultdict(list)
-
         self.name = name
         self.private_namespace_generator = private_namespace_generator
         self.standard_library_namespace = standard_library_namespace_generator()
+        self.grammar_namespace = grammar_namespace_generator()
         self.old_format = old_format
         self.parser_client = None
         self.impact_client = None
@@ -56,15 +64,19 @@ class LanguageKnowledge(object):
 
             use_delta = abs(use_before[module] - use_after[module])
             if not use_delta: continue
+            timestamps = [ authored_datetime.toordinal() for _ in range(use_delta) ]
 
             if module in private_namespace:
-                self.private_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
+                self.private_module_use[module] += timestamps
+
+            elif module in grammar_namespace:
+                self.grammar_use[module] += timestamps
 
             elif module in self.standard_library_namespace:
-                self.standard_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
+                self.standard_module_use[module] += timestamps
 
             elif module in self.external_module_use or self.get_impact(module) > 0:
-                self.external_module_use[module] += [ authored_datetime.toordinal() for _ in range(use_delta) ]
+                self.external_module_use[module] += timestamps
 
     def _old_format_add_knowledge_data(self, authored_datetime, private_namespace, use_before, use_after):
         for module in (use_before | use_after):
@@ -91,7 +103,6 @@ class LanguageKnowledge(object):
         use_after = self.parse_code(commit.tree[diff.b_path].data_stream.read() if not diff.deleted_file else None)
         self.add_knowledge_data(commit.authored_datetime, private_namespace, use_before, use_after)
 
-
     def analyze_blob(self, blob, commit):
         private_namespace = self.get_private_namespace(commit.tree)
 
@@ -99,11 +110,23 @@ class LanguageKnowledge(object):
         use_after = self.parse_code(commit.tree[blob.path].data_stream.read())
         self.add_knowledge_data(commit.authored_datetime, private_namespace, use_before, use_after)
 
+
+class GrammarNamespace(object):
+
+    def __contains__(self, module):
+        return module.startswith('__grammar__')
+
+
 class PythonKnowledge(LanguageKnowledge):
     NAME = 'python'
 
     def __init__(self):
-        super().__init__(self.NAME, lambda tree: self.get_python_module_names(tree, tree), self.get_python_standard_library_names)
+        super().__init__(
+            self.NAME,
+            lambda tree: self.get_python_module_names(tree, tree),
+            self.get_python_standard_library_names,
+            GrammarNamespace,
+        )
         self.parser_client = BlockingTcpClient('python_parser', 25252, timeout = 60)
         self.impact_client = BlockingTcpClient('python_impact', 25000, timeout = 3)
 
@@ -134,11 +157,18 @@ class PythonKnowledge(LanguageKnowledge):
             known_standard_library_modules = known_standard_library_modules.union(set(stdlib_list(version)))
         return known_standard_library_modules
 
+
 class JavascriptKnowledge(LanguageKnowledge):
+
     NAME = 'javascript'
 
     def __init__(self):
-        super().__init__(self.NAME, lambda tree: set(), self.get_javascript_standard_library_names)
+        super().__init__(
+            self.NAME,
+            lambda tree: set(),
+            self.get_javascript_standard_library_names,
+            GrammarNamespace,
+        )
         self.parser_client = BlockingTcpClient('javascript_parser', 7777, timeout = 60)
         self.impact_client = BlockingTcpClient('javascript_impact', 9999, timeout = 3)
 
@@ -155,4 +185,5 @@ class JavascriptKnowledge(LanguageKnowledge):
             'SIMD.Bool8x16', 'SIMD.Bool16x8', 'SIMD.Bool32x4', 'SIMD.Bool64x2', 'ArrayBuffer', 'SharedArrayBuffer',
             'Atomics', 'DataView', 'JSON', 'Promise', 'Generator', 'GeneratorFunction', 'Reflect', 'Proxy',
             'Intl', 'Intl.Collator', 'Intl.DateTimeFormat', 'Intl.NumberFormat', 'arguments' ])
+
 
