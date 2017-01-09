@@ -71,11 +71,11 @@ class GithubCommitCrawler(object):
         if os.path.isdir(repo_path):
             shutil.rmtree(repo_path)
         try:
-            LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if clone_base_dir == self.small_repo_dir else 'file'))
+            LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if base_dir == self.small_repo_dir else 'file'))
             return git.Repo.clone_from(url, repo_path)
         except git.exc.GitCommandError as e:
             if base_dir == self.small_repo_dir:
-                LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk...'.format(repo.name, e))
+                LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name, e))
                 return self.clone(repo, force_to_fs = True)
             else:
                 raise e
