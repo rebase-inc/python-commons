@@ -19,9 +19,12 @@ DEFAULT_CONFIG = {
         'tmpfs_cutoff': 262144000 # 250M
         }
 
+def _report_progress(finished, remaining):
+    LOGGER.info('{:.1%}'.format(len(finished) / float(len(finished) + len(remaining))))
+
 class GithubCommitCrawler(object):
 
-    def __init__(self, callback, access_token, config, username = None):
+    def __init__(self, callback, access_token, config, report_progress = _report_progress, username = None):
         self._username = username
         self.config = {**DEFAULT_CONFIG, **config}
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
@@ -30,6 +33,7 @@ class GithubCommitCrawler(object):
         self.tmpfs_dir = self.config['tmpfs_dir']
         self.fs_dir = self.config['fs_dir']
         self.tmpfs_cutoff = self.config['tmpfs_cutoff']
+        self.report_progress = report_progress
 
     @property
     def user(self):
@@ -48,10 +52,15 @@ class GithubCommitCrawler(object):
                     repos_to_crawl.append(repo)
             except GithubException as e:
                 LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(self.user.login, repo, e))
-        for repo in repos_to_crawl:
+        self.report_progress([], [repo.full_name for repo in repos_to_crawl])
+        for ind, repo in enumerate(repos_to_crawl):
             start = time.time()
             self.crawl_repo(repo)
             LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
+            self.report_progress(
+                    [repo.full_name for repo in repos_to_crawl[0:ind]],
+                    [repo.full_name for repo in repos_to_crawl[ind:-1]]
+                    )
 
     def crawl_repo(self, repo):
         all_commits = repo.get_commits(author = self.user.login)
@@ -72,7 +81,7 @@ class GithubCommitCrawler(object):
         try:
             return git.Repo.clone_from(url, clone_path)
         except git.exc.GitCommandError as exc:
-            shutil.rmtree(clone_path, ignore_erors = True)
+            shutil.rmtree(clone_path, ignore_errors = True)
             if in_memory:
                 LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name, e))
                 return self.clone(repo, in_memory = False)
