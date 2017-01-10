@@ -19,17 +19,21 @@ DEFAULT_CONFIG = {
         'tmpfs_cutoff': 262144000 # 250M
         }
 
+def _report_progress(finished, remaining):
+    LOGGER.info('{:.1%}'.format(len(finished) / float(len(finished) + len(remaining))))
+
 class GithubCommitCrawler(object):
 
-    def __init__(self, callback, access_token, config, username = None):
+    def __init__(self, callback, access_token, config, report_progress = _report_progress, username = None):
         self._username = username
         self.config = {**DEFAULT_CONFIG, **config}
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
         self.oauth_clone_prefix = 'https://{access_token}@github.com'.format(access_token = access_token)
         self.callback = callback
-        self.small_repo_dir = self.config['tmpfs_dir']
-        self.large_repo_dir = self.config['fs_dir']
-        self.repo_cutoff_in_bytes = self.config['tmpfs_cutoff']
+        self.tmpfs_dir = self.config['tmpfs_dir']
+        self.fs_dir = self.config['fs_dir']
+        self.tmpfs_cutoff = self.config['tmpfs_cutoff']
+        self.report_progress = report_progress
 
     @property
     def user(self):
@@ -48,37 +52,41 @@ class GithubCommitCrawler(object):
                     repos_to_crawl.append(repo)
             except GithubException as e:
                 LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(self.user.login, repo, e))
-        for repo in repos_to_crawl:
+        self.report_progress([], [repo.full_name for repo in repos_to_crawl])
+        for ind, repo in enumerate(repos_to_crawl):
             start = time.time()
             self.crawl_repo(repo)
             LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
+            self.report_progress(
+                    [repo.full_name for repo in repos_to_crawl[0:ind]],
+                    [repo.full_name for repo in repos_to_crawl[ind:-1]]
+                    )
 
     def crawl_repo(self, repo):
         all_commits = repo.get_commits(author = self.user.login)
         if not next(all_commits.__iter__(), None): # totalCount doesn't work
             return
         else:
-            cloned_repo = self.clone(repo)
+            cloned_repo = self.clone(repo, repo.size <= self.tmpfs_cutoff)
             for commit in repo.get_commits(author = self.user.login):
                 self.analyze_commit(cloned_repo.commit(commit.sha))
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
 
-    def clone(self, repo, force_to_fs = False):
+    def clone(self, repo, in_memory = True):
         url = repo.clone_url.replace('https://github.com', self.oauth_clone_prefix, 1)
-        base_dir = self.large_repo_dir if force_to_fs or repo.size >= self.repo_cutoff_in_bytes else self.small_repo_dir
-        repo_path = os.path.join(base_dir, repo.name)
-        if os.path.isdir(repo_path):
-            shutil.rmtree(repo_path)
+        clone_path = os.path.join(self.tmpfs_dir if in_memory else self.fs_dir, repo.name)
+        shutil.rmtree(clone_path, ignore_errors = True)
+        LOGGER.debug('Cloning repo "{}" {}'.format(repo.full_name, 'in memory' if in_memory else 'to filesystem'))
         try:
-            LOGGER.debug('Cloning repo "{}" to {}'.format(repo.full_name, 'memory' if base_dir == self.small_repo_dir else 'file'))
-            return git.Repo.clone_from(url, repo_path)
-        except git.exc.GitCommandError as e:
-            if base_dir == self.small_repo_dir:
+            return git.Repo.clone_from(url, clone_path)
+        except git.exc.GitCommandError as exc:
+            shutil.rmtree(clone_path, ignore_errors = True)
+            if in_memory:
                 LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name, e))
-                return self.clone(repo, force_to_fs = True)
+                return self.clone(repo, in_memory = False)
             else:
-                raise e
+                raise exc
 
     def analyze_commit(self, commit):
         if len(commit.parents) == 0:
