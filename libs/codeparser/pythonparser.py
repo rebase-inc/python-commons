@@ -12,9 +12,16 @@ PY2_PORT = 25253
 IMPACT_HOST = 'python_impact'
 IMPACT_PORT = 25000
 
+
+class StdLib(set):
+
+    def __contains__(self, module):
+        return module.startswith('__grammar__') or super().__contains__(module)
+
+
 class PythonParser(LanguageParser):
     language = 'python'
-    stdlib = reduce(lambda namespace, version: namespace.union(set(stdlib_list(version))), long_versions, set())
+    stdlib = StdLib(reduce(lambda namespace, version: namespace.union(set(stdlib_list(version))), long_versions, set()))
 
     def __init__(self, callback):
         super().__init__(callback)
