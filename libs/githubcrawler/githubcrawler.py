@@ -43,6 +43,7 @@ class GithubCommitCrawler(object):
         return self._user
 
     def initialize_progress(self, skip):
+        # TODO: Cache these requests, since we do them twice
         repos_to_crawl = Counter()
         for repo in self.user.get_repos():
             if not skip(repo):
@@ -88,7 +89,7 @@ class GithubCommitCrawler(object):
         except git.exc.GitCommandError as exc:
             shutil.rmtree(clone_path, ignore_errors = True)
             if in_memory:
-                LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name, e))
+                LOGGER.error('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name))
                 return self.clone(repo, in_memory = False)
             else:
                 raise exc
@@ -137,30 +138,26 @@ class RateLimitAwareGithubAPI(Github):
 
 class RateLimitAwareRequester(Requester):
 
-    def __init__(self, max_retries = 3, min_delay = 0.75, *args, **kwargs):
+    def __init__(self, max_retries = 3, *args, **kwargs):
         kwargs['per_page'] = 100
         super().__init__(*args, **kwargs)
         self.consecutive_failed_attempts = 0
         self.max_retries = max_retries
-        self.min_delay = min_delay
-        self.last_request_time = None
         self.wait_until = None
 
     def _Requester__requestEncode(self, *args, **kwargs):
-        seconds_since_last_request = (datetime.now() - (self.last_request_time or datetime.min)).total_seconds()
         if self.consecutive_failed_attempts >= self.max_retries:
             raise GithubRateLimitMaxRetries(*args[0:3])
-        elif self.wait_until:
+
+        if self.wait_until:
             LOGGER.debug('Sleeping for {:.2f} seconds'.format((self.wait_until - datetime.now()).total_seconds()))
             time.sleep((self.wait_until - datetime.now()).total_seconds())
             self.wait_until = None
-        elif seconds_since_last_request < self.min_delay:
-            LOGGER.debug('Minimum request delay of {} seconds not reached - sleeping for {:.2f} seconds'.format(self.min_delay, self.min_delay - seconds_since_last_request))
-            time.sleep(self.min_delay - seconds_since_last_request)
 
         try:
-            self.last_request_time = datetime.utcnow()
-            return super()._Requester__requestEncode(*args, **kwargs)
+            response = super()._Requester__requestEncode(*args, **kwargs)
+            self.consecutive_failed_attempts = 0
+            return response
         except ConnectionResetError as exc:
             LOGGER.exception('Connection reset!')
             self.consecutive_failed_attempts += 1

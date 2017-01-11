@@ -29,7 +29,6 @@ class LanguageParser(metaclass = abc.ABCMeta):
                 break
         else:
             raise exceptions.UnparsableCode(self.language)
-
         # always try the last successful parser first on the next round
         self.parsers.insert(0, self.parsers.pop(index))
         return response
