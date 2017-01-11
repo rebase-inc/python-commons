@@ -4,6 +4,7 @@ import time
 import shutil
 import logging
 from datetime import datetime
+from collections import Counter
 
 from github import Github, GithubObject, GithubException, RateLimitExceededException
 from github.Requester import Requester
@@ -19,8 +20,8 @@ DEFAULT_CONFIG = {
         'tmpfs_cutoff': 262144000 # 250M
         }
 
-def _report_progress(finished, remaining):
-    LOGGER.info('{:.1%}'.format(len(finished) / float(len(finished) + len(remaining))))
+def _report_progress(commits_scanned, all_commits):
+    LOGGER.info('{:.1%}'.format(sum(commits_scanned.values()) / float(len(all_commits.values()))))
 
 class GithubCommitCrawler(object):
 
@@ -41,26 +42,30 @@ class GithubCommitCrawler(object):
             self._user = self.api.get_user(self._username or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
         return self._user
 
+    def initialize_progress(self, skip):
+        repos_to_crawl = Counter()
+        for repo in self.user.get_repos():
+            if not skip(repo):
+                commit_count = 0
+                for commit in repo.get_commits(author = self.user.login):
+                    commit_count += 1
+                repos_to_crawl[repo.full_name] = commit_count
+        self.progress = (Counter(), repos_to_crawl)
+        self.report_progress(*self.progress)
+
+    def update_progress(self, repo, commits = 1):
+        self.progress[0][repo.full_name] += commits
+        self.report_progress(*self.progress)
+
     def crawl_all_repos(self, skip = lambda repo: False):
         LOGGER.info('Crawling all repositories for github user {}'.format(self.user.login))
-        repos_to_crawl = []
+        self.initialize_progress(skip)
         for repo in self.user.get_repos():
-            try:
-                if skip(repo):
-                    LOGGER.info('Skipping repository "{}"'.format(repo.full_name))
-                else:
-                    repos_to_crawl.append(repo)
-            except GithubException as e:
-                LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(self.user.login, repo, e))
-        self.report_progress([], [repo.full_name for repo in repos_to_crawl])
-        for ind, repo in enumerate(repos_to_crawl):
+            if skip(repo):
+                LOGGER.info('Skipping crawling repo "{}"'.format(repo.full_name))
             start = time.time()
             self.crawl_repo(repo)
-            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
-            self.report_progress(
-                    [repo.full_name for repo in repos_to_crawl[0:ind]],
-                    [repo.full_name for repo in repos_to_crawl[ind:-1]]
-                    )
+            LOGGER.debug('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
 
     def crawl_repo(self, repo):
         all_commits = repo.get_commits(author = self.user.login)
@@ -69,7 +74,7 @@ class GithubCommitCrawler(object):
         else:
             cloned_repo = self.clone(repo, repo.size <= self.tmpfs_cutoff)
             for commit in repo.get_commits(author = self.user.login):
-                self.analyze_commit(cloned_repo.commit(commit.sha))
+                self.analyze_commit(cloned_repo.commit(commit.sha), repo)
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
 
@@ -88,13 +93,14 @@ class GithubCommitCrawler(object):
             else:
                 raise exc
 
-    def analyze_commit(self, commit):
+    def analyze_commit(self, commit, repo):
         if len(commit.parents) == 0:
-            return self.analyze_initial_commit(commit)
+            self.analyze_initial_commit(commit)
         elif len(commit.parents) == 1:
-            return self.analyze_regular_commit(commit)
+            self.analyze_regular_commit(commit)
         else:
-            return self.analyze_merge_commit(commit)
+            self.analyze_merge_commit(commit)
+        self.update_progress(repo)
 
     def analyze_regular_commit(self, commit):
         for diff in commit.parents[0].diff(commit, create_patch = True):

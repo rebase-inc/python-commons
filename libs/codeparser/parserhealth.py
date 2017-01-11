@@ -30,11 +30,20 @@ class ParserHealth(object):
             return True
         self.attempted += 1
 
-    def __repr__(self):
+    def as_dict(self):
         unparsable = sum(self.unparsable.values())
         unrecognized = sum(self.unrecognized.values())
         unsupported = sum(self.unsupported.values())
-        return '{}(unparsable={}, unrecognized={}, unsupported={}, attempted={})'.format(self.__class__.__name__, unparsable, unrecognized, unsupported, self.attempted)
+        return { 'unparsable': unparsable, 'unrecognized': unrecognized, 'unsupported': unsupported, 'attempted': self.attempted }
+
+    def __repr__(self):
+        fields = self.as_dict()
+        return '{}(unparsable={}, unrecognized={}, unsupported={}, attempted={})'.format(
+                self.__class__.__name__,
+                fields['unparsable'],
+                fields['unrecognized'],
+                fields['unsupported'],
+                fields['attempted'])
 
 if __name__ == '__main__':
     p = ParserHealth()
