@@ -4,6 +4,7 @@ import time
 import shutil
 import logging
 from datetime import datetime
+from collections import Counter
 
 from github import Github, GithubObject, GithubException, RateLimitExceededException
 from github.Requester import Requester
@@ -19,8 +20,8 @@ DEFAULT_CONFIG = {
         'tmpfs_cutoff': 262144000 # 250M
         }
 
-def _report_progress(finished, remaining):
-    LOGGER.info('{:.1%}'.format(len(finished) / float(len(finished) + len(remaining))))
+def _report_progress(commits_scanned, all_commits):
+    LOGGER.info('{:.1%}'.format(sum(commits_scanned.values()) / float(len(all_commits.values()))))
 
 class GithubCommitCrawler(object):
 
@@ -41,26 +42,31 @@ class GithubCommitCrawler(object):
             self._user = self.api.get_user(self._username or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
         return self._user
 
+    def initialize_progress(self, skip):
+        # TODO: Cache these requests, since we do them twice
+        repos_to_crawl = Counter()
+        for repo in self.user.get_repos():
+            if not skip(repo):
+                commit_count = 0
+                for commit in repo.get_commits(author = self.user.login):
+                    commit_count += 1
+                repos_to_crawl[repo.full_name] = commit_count
+        self.progress = (Counter(), repos_to_crawl)
+        self.report_progress(*self.progress)
+
+    def update_progress(self, repo, commits = 1):
+        self.progress[0][repo.full_name] += commits
+        self.report_progress(*self.progress)
+
     def crawl_all_repos(self, skip = lambda repo: False):
         LOGGER.info('Crawling all repositories for github user {}'.format(self.user.login))
-        repos_to_crawl = []
+        self.initialize_progress(skip)
         for repo in self.user.get_repos():
-            try:
-                if skip(repo):
-                    LOGGER.info('Skipping repository "{}"'.format(repo.full_name))
-                else:
-                    repos_to_crawl.append(repo)
-            except GithubException as e:
-                LOGGER.exception('Unknown exception for user "{}" and repository "{}": {}'.format(self.user.login, repo, e))
-        self.report_progress([], [repo.full_name for repo in repos_to_crawl])
-        for ind, repo in enumerate(repos_to_crawl):
+            if skip(repo):
+                LOGGER.info('Skipping crawling repo "{}"'.format(repo.full_name))
             start = time.time()
             self.crawl_repo(repo)
-            LOGGER.info('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
-            self.report_progress(
-                    [repo.full_name for repo in repos_to_crawl[0:ind]],
-                    [repo.full_name for repo in repos_to_crawl[ind:-1]]
-                    )
+            LOGGER.debug('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
 
     def crawl_repo(self, repo):
         all_commits = repo.get_commits(author = self.user.login)
@@ -83,7 +89,7 @@ class GithubCommitCrawler(object):
         except git.exc.GitCommandError as exc:
             shutil.rmtree(clone_path, ignore_errors = True)
             if in_memory:
-                LOGGER.exception('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name, e))
+                LOGGER.error('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name))
                 return self.clone(repo, in_memory = False)
             else:
                 raise exc
@@ -95,6 +101,7 @@ class GithubCommitCrawler(object):
             return self.analyze_regular_commit(repo, commit)
         else:
             return self.analyze_merge_commit(repo, commit)
+        self.update_progress(repo)
 
     def analyze_regular_commit(self, repo, commit):
         for diff in commit.parents[0].diff(commit, create_patch = True):
@@ -131,30 +138,26 @@ class RateLimitAwareGithubAPI(Github):
 
 class RateLimitAwareRequester(Requester):
 
-    def __init__(self, max_retries = 3, min_delay = 0.75, *args, **kwargs):
+    def __init__(self, max_retries = 3, *args, **kwargs):
         kwargs['per_page'] = 100
         super().__init__(*args, **kwargs)
         self.consecutive_failed_attempts = 0
         self.max_retries = max_retries
-        self.min_delay = min_delay
-        self.last_request_time = None
         self.wait_until = None
 
     def _Requester__requestEncode(self, *args, **kwargs):
-        seconds_since_last_request = (datetime.now() - (self.last_request_time or datetime.min)).total_seconds()
         if self.consecutive_failed_attempts >= self.max_retries:
             raise GithubRateLimitMaxRetries(*args[0:3])
-        elif self.wait_until:
+
+        if self.wait_until:
             LOGGER.debug('Sleeping for {:.2f} seconds'.format((self.wait_until - datetime.now()).total_seconds()))
             time.sleep((self.wait_until - datetime.now()).total_seconds())
             self.wait_until = None
-        elif seconds_since_last_request < self.min_delay:
-            LOGGER.debug('Minimum request delay of {} seconds not reached - sleeping for {:.2f} seconds'.format(self.min_delay, self.min_delay - seconds_since_last_request))
-            time.sleep(self.min_delay - seconds_since_last_request)
 
         try:
-            self.last_request_time = datetime.utcnow()
-            return super()._Requester__requestEncode(*args, **kwargs)
+            response = super()._Requester__requestEncode(*args, **kwargs)
+            self.consecutive_failed_attempts = 0
+            return response
         except ConnectionResetError as exc:
             LOGGER.exception('Connection reset!')
             self.consecutive_failed_attempts += 1
