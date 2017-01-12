@@ -18,9 +18,15 @@ class MissingLanguageSupport(ParserError):
         return 'Unsupported language: {}'.format(self.language)
 
 class UnparsableCode(ParserError):
-    def __init__(self, language):
+    def __init__(self, context, language):
         super().__init__()
+        self.context = context
         self.language = language
 
     def __str__(self):
-        return 'Unparsable code in {}'.format(self.language)
+        return '{} {}/commit/{}/{}'.format(
+            self.context['order'],
+            self.context['repo'],
+            self.context['commit'],
+            self.context['path']
+        )

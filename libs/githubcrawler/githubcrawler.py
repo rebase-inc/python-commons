@@ -69,7 +69,7 @@ class GithubCommitCrawler(object):
         else:
             cloned_repo = self.clone(repo, repo.size <= self.tmpfs_cutoff)
             for commit in repo.get_commits(author = self.user.login):
-                self.analyze_commit(cloned_repo.commit(commit.sha))
+                self.analyze_commit(repo, cloned_repo.commit(commit.sha))
             if os.path.isdir(cloned_repo.working_dir):
                 shutil.rmtree(cloned_repo.working_dir)
 
@@ -88,29 +88,29 @@ class GithubCommitCrawler(object):
             else:
                 raise exc
 
-    def analyze_commit(self, commit):
+    def analyze_commit(self, repo, commit):
         if len(commit.parents) == 0:
-            return self.analyze_initial_commit(commit)
+            return self.analyze_initial_commit(repo, commit)
         elif len(commit.parents) == 1:
-            return self.analyze_regular_commit(commit)
+            return self.analyze_regular_commit(repo, commit)
         else:
-            return self.analyze_merge_commit(commit)
+            return self.analyze_merge_commit(repo, commit)
 
-    def analyze_regular_commit(self, commit):
+    def analyze_regular_commit(self, repo, commit):
         for diff in commit.parents[0].diff(commit, create_patch = True):
             tree_before = commit.parents[0].tree if not diff.new_file else None
             tree_after = commit.tree if not diff.deleted_file else None
             path_before = diff.a_path
             path_after = diff.b_path
-            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+            self.callback(repo, commit, tree_before, tree_after, path_before, path_after, commit.authored_datetime)
 
-    def analyze_initial_commit(self, commit):
+    def analyze_initial_commit(self, repo, commit):
         for blob in commit.tree.traverse(predicate = lambda item, depth: item.type == 'blob'):
             tree_before = None
             tree_after = commit.tree
             path_before = None
             path_after = blob.path
-            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+            self.callback(repo, commit, tree_before, tree_after, path_before, path_after, commit.authored_datetime)
 
     def analyze_merge_commit(self, commit):
         LOGGER.debug('Skipping merge commit')

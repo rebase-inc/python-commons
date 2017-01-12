@@ -17,7 +17,7 @@ class CodeParser(object):
             self.parsers[parser.language] = parser(callback = callback)
         self.mimetypes = mimetypes.MimeTypes(strict = False)
         self.mimetypes.add_type('application/javascript','.jsx', strict = False)
-        self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)')
+        self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)$')
         self.health = ParserHealth()
 
     def guess_language(self, path):
@@ -35,10 +35,10 @@ class CodeParser(object):
         else:
             raise exceptions.MissingLanguageSupport(language)
 
-    def analyze_code(self, tree_before, tree_after, path_before, path_after, authored_at):
+    def analyze_code(self, repo, commit, tree_before, tree_after, path_before, path_after, authored_at):
         with self.health:
             # we're going to assume the language doesn't change during the commit
-            self.get_parser(path_before or path_after).analyze_code(tree_before, tree_after, path_before, path_after, authored_at)
+            self.get_parser(path_before or path_after).analyze_code(repo, commit, tree_before, tree_after, path_before, path_after, authored_at)
 
     def close(self):
         for parser in self.parsers.values():
