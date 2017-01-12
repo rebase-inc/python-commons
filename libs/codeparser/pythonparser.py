@@ -1,7 +1,8 @@
 from functools import reduce
 
-from asynctcp import BlockingTcpClient
 from stdlib_list import stdlib_list, long_versions
+
+from asynctcp import BlockingTcpClient
 
 from . import LanguageParser
 
