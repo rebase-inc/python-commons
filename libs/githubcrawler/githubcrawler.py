@@ -1,4 +1,4 @@
-import os
+import os.path
 import git
 import time
 import shutil
@@ -68,29 +68,51 @@ class GithubCommitCrawler(object):
             self.crawl_repo(repo)
             LOGGER.debug('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
 
-    def crawl_repo(self, repo):
+    def crawl_repo(self, repo, leave_clone=False):
+        if isinstance(repo, str):
+            repo = self.user.get_repo(repo)
         all_commits = repo.get_commits(author = self.user.login)
         if not next(all_commits.__iter__(), None): # totalCount doesn't work
             return
         else:
-            cloned_repo = self.clone(repo, repo.size <= self.tmpfs_cutoff)
+            cloned_repo = self.clone(repo, repo.size <= self.tmpfs_cutoff, leave_clone=leave_clone)
             for commit in repo.get_commits(author = self.user.login):
                 self.analyze_commit(repo, cloned_repo.commit(commit.sha))
-            if os.path.isdir(cloned_repo.working_dir):
+            if os.path.isdir(cloned_repo.working_dir) and not leave_clone:
                 shutil.rmtree(cloned_repo.working_dir)
 
-    def clone(self, repo, in_memory = True):
+    def crawl_commit(self, repo_name, commit_sha, leave_clone=True):
+        repo = self.user.get_repo(repo_name)
+        commit = repo.get_commit(commit_sha)
+        if not commit:
+            return
+        else:
+            cloned_repo = self.clone(
+                repo,
+                in_memory=repo.size <= self.tmpfs_cutoff,
+                leave_clone=leave_clone
+            )
+            self.analyze_commit(repo, cloned_repo.commit(commit.sha))
+            if os.path.isdir(cloned_repo.working_dir) and not leave_clone:
+                shutil.rmtree(cloned_repo.working_dir)
+
+    def clone(self, repo, in_memory=True, leave_clone=False):
         url = repo.clone_url.replace('https://github.com', self.oauth_clone_prefix, 1)
         clone_path = os.path.join(self.tmpfs_dir if in_memory else self.fs_dir, repo.name)
-        shutil.rmtree(clone_path, ignore_errors = True)
+        if os.path.exists(clone_path):
+            if leave_clone:
+                LOGGER.debug('Skip cloning local repository clone, it already exists: %s', clone_path)
+                return git.Repo(clone_path)
+            else:
+                shutil.rmtree(clone_path, ignore_errors=True)
         LOGGER.debug('Cloning repo "{}" {}'.format(repo.full_name, 'in memory' if in_memory else 'to filesystem'))
         try:
             return git.Repo.clone_from(url, clone_path)
         except git.exc.GitCommandError as exc:
-            shutil.rmtree(clone_path, ignore_errors = True)
+            shutil.rmtree(clone_path, ignore_errors=True)
             if in_memory:
                 LOGGER.error('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name))
-                return self.clone(repo, in_memory = False)
+                return self.clone(repo, in_memory=False)
             else:
                 raise exc
 
