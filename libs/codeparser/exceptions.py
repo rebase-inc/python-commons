@@ -25,7 +25,6 @@ class UnparsableCode(ParserError):
     def __init__(self, language, url):
         super().__init__()
         self.url = url
-        self.context = context
         self.language = language
 
     def __str__(self):
