@@ -36,10 +36,11 @@ class ClonedRepository(object):
             LOGGER.debug('Cloning repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
             self.repo = git.Repo.clone_from(url, self.path)
         except git.exc.GitCommandError as exc:
-            shutil.rmtree(self.path)
+            shutil.rmtree(self.path, ignore_errors = True)
             if in_memory:
                 LOGGER.error('Failed to clone repo "{}" to memory, trying to clone to filesystem'.format(remote.full_name))
-                self.path = os.path.join(config['fs_dir'], repo.name)
+                self.path = os.path.join(config['fs_dir'], remote.name)
+                self.repo = git.Repo.clone_from(url, self.path)
             else:
                 raise exc
 
