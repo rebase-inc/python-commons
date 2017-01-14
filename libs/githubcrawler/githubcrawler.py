@@ -3,7 +3,10 @@ import git
 import time
 import shutil
 import logging
+from typing import Callable, Any
 from datetime import datetime
+from functools import lru_cache
+from itertools import filterfalse
 from collections import Counter
 
 from github import Github, GithubObject, GithubException, RateLimitExceededException
@@ -20,108 +23,54 @@ DEFAULT_CONFIG = {
         'tmpfs_cutoff': 262144000 # 250M
         }
 
-def _report_progress(commits_scanned, all_commits):
-    LOGGER.info('{:.1%}'.format(sum(commits_scanned.values()) / float(len(all_commits.values()))))
+class ClonedRepository(object):
 
-class GithubCommitCrawler(object):
-
-    def __init__(self, callback, access_token, config, report_progress = _report_progress, username = None):
-        self._username = username
-        self.config = {**DEFAULT_CONFIG, **config}
-        self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
-        self.oauth_clone_prefix = 'https://{access_token}@github.com'.format(access_token = access_token)
-        self.callback = callback
-        self.tmpfs_dir = self.config['tmpfs_dir']
-        self.fs_dir = self.config['fs_dir']
-        self.tmpfs_cutoff = self.config['tmpfs_cutoff']
-        self.report_progress = report_progress
-
-    @property
-    def user(self):
-        if not hasattr(self, '_user'):
-            self._user = self.api.get_user(self._username or GithubObject.NotSet) # if user is owner of auth token, we can't set user here *facepalm*
-        return self._user
-
-    def initialize_progress(self, skip):
-        # TODO: Cache these requests, since we do them twice
-        repos_to_crawl = Counter()
-        for repo in self.user.get_repos():
-            if not skip(repo):
-                commit_count = 0
-                for commit in repo.get_commits(author = self.user.login):
-                    commit_count += 1
-                repos_to_crawl[repo.full_name] = commit_count
-        self.progress = (Counter(), repos_to_crawl)
-        self.report_progress(*self.progress)
-
-    def update_progress(self, repo, commits = 1):
-        self.progress[0][repo.full_name] += commits
-        self.report_progress(*self.progress)
-
-    def crawl_all_repos(self, skip = lambda repo: False):
-        LOGGER.info('Crawling all repositories for github user {}'.format(self.user.login))
-        self.initialize_progress(skip)
-        for repo in self.user.get_repos():
-            if skip(repo):
-                LOGGER.info('Skipping crawling repo "{}"'.format(repo.full_name))
-            start = time.time()
-            self.crawl_repo(repo)
-            LOGGER.debug('Crawling repo {} for user {} took {} seconds'.format(repo.full_name, self.user.login, time.time() - start))
-
-    def crawl_repo(self, repo):
-        all_commits = repo.get_commits(author = self.user.login)
-        if not next(all_commits.__iter__(), None): # totalCount doesn't work
-            return
-        else:
-            cloned_repo = self.clone(repo, repo.size <= self.tmpfs_cutoff)
-            for commit in repo.get_commits(author = self.user.login):
-                self.analyze_commit(cloned_repo.commit(commit.sha), repo)
-            if os.path.isdir(cloned_repo.working_dir):
-                shutil.rmtree(cloned_repo.working_dir)
-
-    def clone(self, repo, in_memory = True):
-        url = repo.clone_url.replace('https://github.com', self.oauth_clone_prefix, 1)
-        clone_path = os.path.join(self.tmpfs_dir if in_memory else self.fs_dir, repo.name)
-        shutil.rmtree(clone_path, ignore_errors = True)
-        LOGGER.debug('Cloning repo "{}" {}'.format(repo.full_name, 'in memory' if in_memory else 'to filesystem'))
+    def __init__(self, remote, token, config = DEFAULT_CONFIG):
+        prefix = 'https://{token}@github.com'.format(token = token)
+        url = remote.clone_url.replace('https://github.com', prefix, 1)
+        in_memory = remote.size <= config['tmpfs_cutoff']
         try:
-            return git.Repo.clone_from(url, clone_path)
+            self.path = os.path.join(config['tmpfs_dir'] if in_memory else config['fs_dir'], remote.name)
+            LOGGER.debug('Trying to clone repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
+            self.repo = git.Repo.clone_from(url, self.path)
         except git.exc.GitCommandError as exc:
-            shutil.rmtree(clone_path, ignore_errors = True)
+            shutil.rmtree(self.path)
             if in_memory:
-                LOGGER.error('Failed to clone {} repository into memory, trying to clone to disk'.format(repo.name))
-                return self.clone(repo, in_memory = False)
+                LOGGER.error('Failed to clone repo "{}" to memory, trying to clone to filesystem'.format(remote.full_name))
+                self.path = os.path.join(config['fs_dir'], repo.name)
             else:
                 raise exc
 
-    def analyze_commit(self, commit, repo):
-        if len(commit.parents) == 0:
-            self.analyze_initial_commit(commit)
-        elif len(commit.parents) == 1:
-            self.analyze_regular_commit(commit)
-        else:
-            self.analyze_merge_commit(commit)
-        self.update_progress(repo)
+    def __enter__(self):
+        return self.repo
 
-    def analyze_regular_commit(self, commit):
-        for diff in commit.parents[0].diff(commit, create_patch = True):
-            tree_before = commit.parents[0].tree if not diff.new_file else None
-            tree_after = commit.tree if not diff.deleted_file else None
-            path_before = diff.a_path
-            path_after = diff.b_path
-            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+    def __exit__(self, exc_type, exc_value, traceback):
+        shutil.rmtree(self.path, ignore_errors = True)
 
-    def analyze_initial_commit(self, commit):
-        for blob in commit.tree.traverse(predicate = lambda item, depth: item.type == 'blob'):
-            tree_before = None
-            tree_after = commit.tree
-            path_before = None
-            path_after = blob.path
-            self.callback(tree_before, tree_after, path_before, path_after, commit.authored_datetime)
+class GithubCommitCrawler(object):
 
-    def analyze_merge_commit(self, commit):
-        LOGGER.debug('Skipping merge commit')
+    def __init__(self, access_token, clone_config = DEFAULT_CONFIG):
+        self.access_token = access_token
+        self.clone_config = {**DEFAULT_CONFIG, **clone_config}
+        self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
 
+    def crawl_public_repos(self, username, callback, skip = lambda repo: false, remote_only = False):
+        user = self.api.get_user(login = username)
+        self._crawl_user_repos(user, callback, skip, remote_only)
+
+    def crawl_authorized_repos(self, callback, skip = lambda repo: False, remote_only = False):
+        user = self.api.get_user()
+        self._crawl_user_repos(user, callback, skip, remote_only)
+
+    def _crawl_user_repos(self, user, callback, skip, remote_only):
+        for repo in filterfalse(skip, user.get_repos(**{'type': 'all'})):
+            if remote_only:
+                for commit in repo.get_commits(author = user.login):
+                    callback(repo.full_name, commit)
+            else:
+                with ClonedRepository(repo, self.access_token, self.clone_config) as local_repo:
+                    for commit in repo.get_commits(author = user.login):
+                        callback(repo.full_name, local_repo.commit(commit.sha))
 
 class RateLimitAwareGithubAPI(Github):
 
@@ -135,6 +84,9 @@ class RateLimitAwareGithubAPI(Github):
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
 
+class HashableDict(dict):
+    def __hash__(self):
+        return hash(tuple(sorted(self.items())))
 
 class RateLimitAwareRequester(Requester):
 
@@ -145,9 +97,10 @@ class RateLimitAwareRequester(Requester):
         self.max_retries = max_retries
         self.wait_until = None
 
-    def _Requester__requestEncode(self, *args, **kwargs):
+    @lru_cache()
+    def __requestEncode(self, cnx, verb, url, parameters, requestHeaders, input, encode):
         if self.consecutive_failed_attempts >= self.max_retries:
-            raise GithubRateLimitMaxRetries(*args[0:3])
+            raise GithubRateLimitMaxRetries(cnx, verb, url)
 
         if self.wait_until:
             LOGGER.debug('Sleeping for {:.2f} seconds'.format((self.wait_until - datetime.now()).total_seconds()))
@@ -155,16 +108,19 @@ class RateLimitAwareRequester(Requester):
             self.wait_until = None
 
         try:
-            response = super()._Requester__requestEncode(*args, **kwargs)
+            response = super()._Requester__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
             self.consecutive_failed_attempts = 0
             return response
         except ConnectionResetError as exc:
             LOGGER.exception('Connection reset!')
             self.consecutive_failed_attempts += 1
-            return self._Requester__requestEncode(*args, **kwargs)
+            return self._Requester__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except RateLimitExceededException:
             LOGGER.info('Rate limited from GitHub API!')
             self.wait_until = datetime.utcfromtimestamp(self.rate_limiting_resettime)
             self.consecutive_failed_attempts += 1
-            return self._Requester__requestEncode(*args, **kwargs)
+            return self._Requester__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
 
+    def _Requester__requestEncode(self, cnx, verb, url, parameters, requestHeaders, input, encode):
+        parameters = HashableDict(parameters) if isinstance(parameters, dict) else parameters
+        return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)

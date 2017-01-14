@@ -3,6 +3,7 @@ import json
 import base64
 import logging
 
+from functools import lru_cache
 from collections import Counter
 
 from . import exceptions
@@ -19,16 +20,16 @@ class LanguageParser(metaclass = abc.ABCMeta):
         self.callback = callback
 
     @abc.abstractmethod
-    def get_context(self, tree, path):
+    def get_context(self, commit, path):
         return dict()
 
-    def parse(self, code, context = None):
+    def parse(self, code, context):
         for index, parser in enumerate(self.parsers):
             response = parser.send(json.dumps({ 'code': base64.b64encode(code).decode('utf-8'), 'context': context }))
             if response and 'error' not in response:
                 break
         else:
-            raise exceptions.UnparsableCode(self.language)
+            raise exceptions.UnparsableCode(self.language, context['url'])
         # always try the last successful parser first on the next round
         self.parsers.insert(0, self.parsers.pop(index))
         return response
@@ -38,13 +39,16 @@ class LanguageParser(metaclass = abc.ABCMeta):
         for parser in self.parsers:
             parser.close()
 
-    def get_module_counts(self, tree, path):
-        if not tree or not path:
-            return None
-        context = self.get_context(tree, path)
-        code = tree[path].data_stream.read()
+    @lru_cache()
+    def get_module_counts(self, repo_name, commit, path):
+        code = commit.tree[path].data_stream.read()
+        context = self.get_context(commit, path)
+        context['url'] = self.get_commit_url_path(repo_name, commit, path)
         use_count = self.parse(code, context)['use_count']
-        return { name: count for name, count in use_count.items() if self.check_relevance(name) }
+        return Counter({ name: count for name, count in use_count.items() if self.check_relevance(name) })
+
+    def get_commit_url_path(self, repo_name, commit, path):
+        return 'https://github.com/{fullname}/blob/{hexsha}/{path}'.format(fullname = repo_name, hexsha = commit.hexsha, path = path)
 
     @property
     @abc.abstractmethod
@@ -55,12 +59,17 @@ class LanguageParser(metaclass = abc.ABCMeta):
     def check_relevance(self, module):
         return int(self.relevance_checker.send(json.dumps({ 'module': module.split('.')[0] }))['impact']) > 0
 
-    def analyze_code(self, tree_before, tree_after, path_before, path_after, authored_at):
-        module_counts_before = Counter(self.get_module_counts(tree_before, path_before))
-        module_counts_after = Counter(self.get_module_counts(tree_after, path_after))
-        differential_counts = module_counts_before
-        differential_counts.subtract(module_counts_after)
+    def analyze_blob(self, repo_name, commit, path):
+        module_counts = self.get_module_counts(repo_name, commit, path)
+        for module, count in module_counts.most_common():
+            self.callback(self.language, *module.split('.'), date = commit.authored_datetime, count = count)
+
+    def analyze_diff(self, repo_name, commit, diff):
+        counts_before = self.get_module_counts(repo_name, commit.parents[0], diff.a_path)
+        counts_after = self.get_module_counts(repo_name, commit, diff.b_path)
+        differential_counts = counts_before
+        differential_counts.subtract(counts_after)
         for module, differential_count in differential_counts.most_common():
             if not differential_count:
                 continue
-            self.callback(self.language, *module.split('.'), date = authored_at, count = abs(differential_count))
+            self.callback(self.language, *module.split('.'), date = commit.authored_datetime, count = abs(differential_count))

@@ -7,7 +7,10 @@ class UnrecognizedExtension(ParserError):
         self.extension = extension
 
     def __str__(self):
-        return 'Unrecognized extension: {}'.format(self.extension)
+        if self.extension:
+            return 'Unrecognized extension: {}'.format(self.extension)
+        else:
+            return 'Missing extension'
 
 class MissingLanguageSupport(ParserError):
     def __init__(self, language):
@@ -18,7 +21,7 @@ class MissingLanguageSupport(ParserError):
         return 'Unsupported language: {}'.format(self.language)
 
 class UnparsableCode(ParserError):
-    def __init__(self, language):
+    def __init__(self, language, url):
         super().__init__()
         self.language = language
 
