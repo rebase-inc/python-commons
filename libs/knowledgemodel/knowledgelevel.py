@@ -6,7 +6,7 @@ import datetime
 from typing import Union
 from collections import defaultdict
 
-BREADTH_IMPORTANCE = float(os.environ['BREADTH_IMPORTANCE'])
+KNOWLEDGE_WEIGHT_INVERSE = float(os.environ['KNOWLEDGE_WEIGHT_INVERSE'])
 UNKNOWN_KEY = '__unknown__'
 LOGGER = logging.getLogger()
 
@@ -31,7 +31,7 @@ class KnowledgeLevel(defaultdict, metaclass = abc.ABCMeta):
 
     @abc.abstractmethod
     def breadth_regularization(self, knowledge: Union[float, int]) -> float:
-        return math.log1p(knowledge / BREADTH_IMPORTANCE) / math.log1p(1 / BREADTH_IMPORTANCE)
+        return math.log1p(knowledge / KNOWLEDGE_WEIGHT_INVERSE) / math.log1p(1 / KNOWLEDGE_WEIGHT_INVERSE)
 
     def add_reference(self, *args, date: datetime.date = None, count: int = 1) -> None:
         args = args[0:self.reference_depth - 1]

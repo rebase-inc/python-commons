@@ -18,6 +18,7 @@ logging.getLogger('boto3').setLevel(logging.WARNING)
 logging.getLogger('botocore').setLevel(logging.WARNING)
 
 class KnowledgeModel(KnowledgeLevel):
+    VERSION = '1.0.0' # use semvar
 
     def __init__(self):
         super().__init__(LanguageKnowledge)
@@ -32,7 +33,10 @@ class KnowledgeModel(KnowledgeLevel):
         written_objects = {}
         s3bucket = boto3.resource('s3', **s3config).Bucket(bucket)
         knowledge_object = s3bucket.Object('users/{}'.format(username))
-        etag = knowledge_object.put(Body = json.dumps(self.simple_projection))['ETag']
+        etag = knowledge_object.put(Body = json.dumps({
+            'version': self.VERSION,
+            'knowledge': self.simple_projection
+            }))['ETag']
         written_objects[etag] = knowledge_object
 
         for lang_name, lang_knowledge in self.simple_projection.items():
@@ -131,34 +135,29 @@ if __name__ == '__main__':
 
 
     person_1 = KnowledgeModel()
-    person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
-    person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
-    person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
-    person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
+    person_1.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 80)
 
     person_2 = KnowledgeModel()
-    person_2.add_reference('python', 'socket', 'send', date = datetime.date.today(), count = 1)
-    person_2.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 1)
-    person_2.add_reference('python', 'collections', 'defaultdict', date = datetime.date.today(), count = 1)
-    person_2.add_reference('python', 'collections', 'Counter', date = datetime.date.today(), count = 1)
+    person_2.add_reference('python', 'socket', 'send', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'collections', 'defaultdict', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'collections', 'Counter', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'iterools', 'filterfalse', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'functools', 'lru_cache', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'functools', 'reduce', date = datetime.date.today(), count = 10)
+    person_2.add_reference('python', 'contextlib', 'AbstractContextManager', date = datetime.date.today(), count = 10)
 
     person_3 = KnowledgeModel()
-    person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
-    person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
-    person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
-    person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
+    person_3.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 80)
 
     person_4 = KnowledgeModel()
-    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
-    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
-    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
-    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 1)
+    person_4.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=365), count = 80)
 
     person_5 = KnowledgeModel()
-    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
-    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
-    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
-    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 1)
+    person_5.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=2*365), count = 80)
+
+    person_6 = KnowledgeModel()
+    person_6.add_reference('python', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=4*365), count = 80)
 
     print('Person 1\'s knowledge (narrow) looks like {}'.format(person_1.simple_projection))
     print()
@@ -166,7 +165,8 @@ if __name__ == '__main__':
     print('Person 2\'s overall knowledge (broad) is {}'.format(person_2.simple_projection['python'][OVERALL_KEY]))
     print('Person 3\'s overall knowledge (narrow and a long time ago) is {}'.format(person_3.simple_projection['python'][OVERALL_KEY]))
     print('Person 4\'s overall knowledge (narrow and year ago) is {}'.format(person_4.simple_projection['python'][OVERALL_KEY]))
-    print('Person 4\'s overall knowledge (narrow and two years ago) is {}'.format(person_5.simple_projection['python'][OVERALL_KEY]))
+    print('Person 5\'s overall knowledge (narrow and two years ago) is {}'.format(person_5.simple_projection['python'][OVERALL_KEY]))
+    print('Person 6\'s overall knowledge (narrow and four years ago) is {}'.format(person_6.simple_projection['python'][OVERALL_KEY]))
     print()
     print('Ratio of broad to narrow knowledge in this case is {}'.format(person_2.simple_projection['python'][OVERALL_KEY]/person_1.simple_projection['python'][OVERALL_KEY]))
     print()

@@ -3,7 +3,7 @@ import abc
 import math
 from typing import Union
 
-BREADTH_IMPORTANCE = float(os.environ['BREADTH_IMPORTANCE'])
+KNOWLEDGE_WEIGHT_INVERSE = float(os.environ['KNOWLEDGE_WEIGHT_INVERSE'])
 
 class KnowledgeLeaf(list, metaclass = abc.ABCMeta):
 
@@ -18,7 +18,7 @@ class KnowledgeLeaf(list, metaclass = abc.ABCMeta):
 
     @abc.abstractmethod
     def breadth_regularization(self, knowledge: Union[float, int]) -> float:
-        return math.log1p(knowledge / BREADTH_IMPORTANCE) / math.log1p(1 / BREADTH_IMPORTANCE)
+        return math.log1p(knowledge / KNOWLEDGE_WEIGHT_INVERSE) / math.log1p(1 / KNOWLEDGE_WEIGHT_INVERSE)
 
     @abc.abstractmethod
     def __repr__(self):
