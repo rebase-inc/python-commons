@@ -25,10 +25,11 @@ DEFAULT_CONFIG = {
 
 class ClonedRepository(object):
 
-    def __init__(self, remote, token, config = DEFAULT_CONFIG):
+    def __init__(self, remote, token, config = DEFAULT_CONFIG, cleanup = True):
         prefix = 'https://{token}@github.com'.format(token = token)
         url = remote.clone_url.replace('https://github.com', prefix, 1)
         in_memory = remote.size <= config['tmpfs_cutoff']
+        self.cleanup = cleanup
         try:
             self.path = os.path.join(config['tmpfs_dir'] if in_memory else config['fs_dir'], remote.name)
             LOGGER.debug('Trying to clone repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
@@ -45,7 +46,8 @@ class ClonedRepository(object):
         return self.repo
 
     def __exit__(self, exc_type, exc_value, traceback):
-        shutil.rmtree(self.path, ignore_errors = True)
+        if self.cleanup:
+            shutil.rmtree(self.path, ignore_errors = True)
 
 class GithubCommitCrawler(object):
     
@@ -56,21 +58,44 @@ class GithubCommitCrawler(object):
 
     def crawl_public_repos(self, username, callback, skip = lambda repo: false, remote_only = False):
         user = self.api.get_user(login = username)
-        self._crawl_user_repos(user, callback, skip, remote_only)
+        self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
 
     def crawl_authorized_repos(self, callback, skip = lambda repo: False, remote_only = False):
         user = self.api.get_user()
-        self._crawl_user_repos(user, callback, skip, remote_only)
+        self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
 
-    def _crawl_user_repos(self, user, callback, skip, remote_only):
+    def crawl_individual_public_repo(self, owner, name, callback, remote_only = False, cleanup = True):
+        user = self.api.get_user(login = owner)
+        skip = lambda repo: repo.name == name
+        self._crawl_user_repos(user, callback, skip, remote_only, cleanup)
+
+    def crawl_individual_authorized_repo(self, name, callback, remote_only = False, cleanup = True):
+        user = self.api.get_user()
+        skip = lambda repo: repo.name == name
+        self._crawl_user_repos(user, callback, skip, remote_only, cleanup)
+
+    def crawl_individual_public_commit(self, repo_owner, repo_name, commit_sha, cleanup = True):
+        repo = self.api.get_user(login = repo_owner).get_repo(repo_name)
+        with ClonedRepository(repo, self.access_token, self.clone_config, cleanup = cleanup) as local_repo:
+            commit = repo.get_commit(commit_sha)
+            callback(repo.full_name, commit)
+
+    def crawl_individual_authorized_commit(self, repo_name, commit_sha, cleanup = True):
+        repo = self.api.get_user().get_repo(repo_name)
+        with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
+            commit = repo.get_commit(commit_sha)
+            callback(repo.full_name, commit)
+
+    def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
         for repo in filterfalse(skip, user.get_repos(**{'type': 'all'})):
             if remote_only:
                 for commit in repo.get_commits(author = user.login):
                     callback(repo.full_name, commit)
             else:
-                with ClonedRepository(repo, self.access_token, self.clone_config) as local_repo:
+                with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
                     for commit in repo.get_commits(author = user.login):
                         callback(repo.full_name, local_repo.commit(commit.sha))
+
 
 class RateLimitAwareGithubAPI(Github):
 
