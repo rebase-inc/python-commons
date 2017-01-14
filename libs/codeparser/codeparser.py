@@ -17,7 +17,7 @@ class CodeParser(object):
             self.parsers[parser.language] = parser(callback = callback)
         self.mimetypes = mimetypes.MimeTypes(strict = False)
         self.mimetypes.add_type('application/javascript','.jsx', strict = False)
-        self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)')
+        self.mimetype_regex = re.compile('(?:application|text)\/(?:(?:x-)?)(?P<language>[a-z]+)$')
         self.health = ParserHealth()
 
     def guess_language(self, path):

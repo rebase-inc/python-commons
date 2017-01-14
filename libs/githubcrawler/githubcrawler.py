@@ -1,4 +1,4 @@
-import os
+import os.path
 import git
 import time
 import shutil
@@ -48,7 +48,7 @@ class ClonedRepository(object):
         shutil.rmtree(self.path, ignore_errors = True)
 
 class GithubCommitCrawler(object):
-
+    
     def __init__(self, access_token, clone_config = DEFAULT_CONFIG):
         self.access_token = access_token
         self.clone_config = {**DEFAULT_CONFIG, **clone_config}

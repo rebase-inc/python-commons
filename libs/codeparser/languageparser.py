@@ -23,15 +23,22 @@ class LanguageParser(metaclass = abc.ABCMeta):
     def get_context(self, commit, path):
         return dict()
 
-    def parse(self, code, context):
+    def parse(self, code, context = None):
+        request = json.dumps(
+            {
+                'code':     base64.b64encode(code).decode('utf-8'),
+                'context':  context
+            }
+        )
         for index, parser in enumerate(self.parsers):
-            response = parser.send(json.dumps({ 'code': base64.b64encode(code).decode('utf-8'), 'context': context }))
+            response = parser.send(request)
             if response and 'error' not in response:
                 break
         else:
             raise exceptions.UnparsableCode(self.language, context['url'])
         # always try the last successful parser first on the next round
         self.parsers.insert(0, self.parsers.pop(index))
+        
         return response
 
     def close(self):

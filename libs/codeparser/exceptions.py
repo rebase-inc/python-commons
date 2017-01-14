@@ -21,9 +21,12 @@ class MissingLanguageSupport(ParserError):
         return 'Unsupported language: {}'.format(self.language)
 
 class UnparsableCode(ParserError):
+    
     def __init__(self, language, url):
         super().__init__()
+        self.url = url
+        self.context = context
         self.language = language
 
     def __str__(self):
-        return 'Unparsable code in {}'.format(self.language)
+        return self.url 

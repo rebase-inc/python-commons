@@ -1,7 +1,8 @@
 from functools import reduce
 
-from asynctcp import BlockingTcpClient
 from stdlib_list import stdlib_list, long_versions
+
+from asynctcp import BlockingTcpClient
 
 from . import LanguageParser
 
@@ -29,11 +30,11 @@ class PythonParser(LanguageParser):
         self.parsers.append(BlockingTcpClient(PY3_HOST, PY3_PORT, timeout = 60))
         self.parsers.append(BlockingTcpClient(PY2_HOST, PY2_PORT, timeout = 60))
 
-    def get_context(self, tree, path):
+    def get_context(self, repo, commit, tree, path, before):
         # skipping the context for now, because if something isn't standard library and
         # it isn't found to be "relevant", we're not going to include it. However, this
         # may be useful in the future for things like understanding references.
-        return super().get_context(tree, path)
+        return super().get_context(repo, commit, tree, path, before)
 
     def check_relevance(self, module):
         return module.split('.')[0] in self.stdlib or super().check_relevance(module)

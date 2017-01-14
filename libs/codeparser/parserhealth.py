@@ -17,16 +17,16 @@ class ParserHealth(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is exceptions.UnrecognizedExtension:
-            self.unrecognized[exc_value.extension] += 1
-            LOGGER.debug('Skipping parsing. {}'.format(exc_value))
+            self.unrecognized.update([exc_value.extension])
+            LOGGER.debug('Skipping parsing. %s', exc_value)
             return True
         elif exc_type is exceptions.MissingLanguageSupport:
-            self.unsupported[exc_value.language] += 1
-            LOGGER.debug('Skipping parsing. {}'.format(exc_value))
+            self.unsupported.update([exc_value.language])
+            LOGGER.debug('Skipping parsing. %s', exc_value)
             return True
         elif exc_type is exceptions.UnparsableCode:
-            self.unparsable[exc_value.language] += 1
-            LOGGER.debug('Skipping parsing. {}'.format(exc_value))
+            self.unparsable.update([exc_value.language])
+            LOGGER.debug('Skipping unparsable code: %s', exc_value)
             return True
         self.attempted += 1
 
