@@ -1,7 +1,8 @@
-import os.path
+import os
 import git
 import time
 import shutil
+import socket
 import logging
 from typing import Callable, Any
 from datetime import datetime
@@ -32,7 +33,7 @@ class ClonedRepository(object):
         self.cleanup = cleanup
         try:
             self.path = os.path.join(config['tmpfs_dir'] if in_memory else config['fs_dir'], remote.name)
-            LOGGER.debug('Trying to clone repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
+            LOGGER.debug('Cloning repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
             self.repo = git.Repo.clone_from(url, self.path)
         except git.exc.GitCommandError as exc:
             shutil.rmtree(self.path)
@@ -137,14 +138,18 @@ class RateLimitAwareRequester(Requester):
             self.consecutive_failed_attempts = 0
             return response
         except ConnectionResetError as exc:
-            LOGGER.exception('Connection reset!')
+            LOGGER.exception('Connection reset! Trying again...')
             self.consecutive_failed_attempts += 1
-            return self._Requester__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
+            return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except RateLimitExceededException:
-            LOGGER.info('Rate limited from GitHub API!')
+            LOGGER.info('Rate limited from GitHub API! Waiting until rate limit reset.')
             self.wait_until = datetime.utcfromtimestamp(self.rate_limiting_resettime)
             self.consecutive_failed_attempts += 1
-            return self._Requester__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
+            return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
+        except socket.timeout:
+            LOGGER.info('Socket timeout! Trying again...')
+            self.consecutive_failed_attempts += 1
+            return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
 
     def _Requester__requestEncode(self, cnx, verb, url, parameters, requestHeaders, input, encode):
         parameters = HashableDict(parameters) if isinstance(parameters, dict) else parameters
