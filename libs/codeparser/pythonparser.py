@@ -30,11 +30,8 @@ class PythonParser(LanguageParser):
         self.parsers.append(BlockingTcpClient(PY3_HOST, PY3_PORT, timeout = 60))
         self.parsers.append(BlockingTcpClient(PY2_HOST, PY2_PORT, timeout = 60))
 
-    def get_context(self, commit, path):
-        # skipping the context for now, because if something isn't standard library and
-        # it isn't found to be "relevant", we're not going to include it. However, this
-        # may be useful in the future for things like understanding references.
-        return super().get_context(commit, path)
+    def get_context(self, repo_name, commit, path):
+        return super().get_context(repo_name, commit, path)
 
     def check_relevance(self, module):
         return module.split('.')[0] in self.stdlib or super().check_relevance(module)

@@ -20,8 +20,8 @@ class LanguageParser(metaclass = abc.ABCMeta):
         self.callback = callback
 
     @abc.abstractmethod
-    def get_context(self, commit, path):
-        return dict()
+    def get_context(self, repo_name, commit, path):
+        return { 'path': path, 'url': self.get_commit_url_path(repo_name, commit, path) }
 
     def parse(self, code, context = None):
         request = json.dumps(
@@ -35,10 +35,11 @@ class LanguageParser(metaclass = abc.ABCMeta):
             if response and 'error' not in response:
                 break
         else:
+            LOGGER.error(str(response))
             raise exceptions.UnparsableCode(self.language, context['url'])
         # always try the last successful parser first on the next round
         self.parsers.insert(0, self.parsers.pop(index))
-        
+
         return response
 
     def close(self):
@@ -49,8 +50,7 @@ class LanguageParser(metaclass = abc.ABCMeta):
     @lru_cache()
     def get_module_counts(self, repo_name, commit, path):
         code = commit.tree[path].data_stream.read()
-        context = self.get_context(commit, path)
-        context['url'] = self.get_commit_url_path(repo_name, commit, path)
+        context = self.get_context(repo_name, commit, path)
         use_count = self.parse(code, context)['use_count']
         return Counter({ name: count for name, count in use_count.items() if self.check_relevance(name) })
 
