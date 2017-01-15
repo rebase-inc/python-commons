@@ -88,7 +88,8 @@ class GithubCommitCrawler(object):
             callback(repo.full_name, commit)
 
     def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
-        for repo in filterfalse(skip, user.get_repos(**{'type': 'all'})):
+        repos = filterfalse(skip, filterfalse(lambda r: r.fork, user.get_repos(type = 'all')))
+        for repo in repos:
             try:
                 self._crawl_user_repo(repo, user, callback, remote_only, cleanup)
             except GithubException as exc:
