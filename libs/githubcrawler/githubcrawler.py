@@ -34,13 +34,13 @@ class ClonedRepository(object):
         try:
             self.path = os.path.join(config['tmpfs_dir'] if in_memory else config['fs_dir'], remote.name)
             LOGGER.debug('Cloning repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
-            self.repo = git.Repo.clone_from(url, self.path)
+            self.repo = git.Repo.clone_from(url, self.path, progress = config['progress'] if 'progress' in config else None)
         except git.exc.GitCommandError as exc:
             shutil.rmtree(self.path, ignore_errors = True)
             if in_memory:
                 LOGGER.error('Failed to clone repo "{}" to memory, trying to clone to filesystem'.format(remote.full_name))
                 self.path = os.path.join(config['fs_dir'], remote.name)
-                self.repo = git.Repo.clone_from(url, self.path)
+                self.repo = git.Repo.clone_from(url, self.path, progress = config['progress'] if 'progress' in config else None)
             else:
                 raise exc
 
@@ -48,6 +48,7 @@ class ClonedRepository(object):
         return self.repo
 
     def __exit__(self, exc_type, exc_value, traceback):
+        del self.repo # prevents git command processes from hanging around
         if self.cleanup:
             shutil.rmtree(self.path, ignore_errors = True)
 
