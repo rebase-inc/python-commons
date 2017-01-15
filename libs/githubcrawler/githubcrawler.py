@@ -52,7 +52,7 @@ class ClonedRepository(object):
             shutil.rmtree(self.path, ignore_errors = True)
 
 class GithubCommitCrawler(object):
-    
+
     def __init__(self, access_token, clone_config = DEFAULT_CONFIG):
         self.access_token = access_token
         self.clone_config = {**DEFAULT_CONFIG, **clone_config}
@@ -67,14 +67,12 @@ class GithubCommitCrawler(object):
         self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
 
     def crawl_individual_public_repo(self, owner, name, callback, remote_only = False, cleanup = True):
-        user = self.api.get_user(login = owner)
-        skip = lambda repo: repo.name == name
-        self._crawl_user_repos(user, callback, skip, remote_only, cleanup)
+        repo = self.api.get_user(login = owner).get_repo(repo_name)
+        self._crawl_user_repo(repo, user, callback, skip, remote_only, cleanup)
 
     def crawl_individual_authorized_repo(self, name, callback, remote_only = False, cleanup = True):
-        user = self.api.get_user()
-        skip = lambda repo: repo.name == name
-        self._crawl_user_repos(user, callback, skip, remote_only, cleanup)
+        repo = self.api.get_user().get_repo(repo_name)
+        self._crawl_user_repo(repo, user, callback, skip, remote_only, cleanup)
 
     def crawl_individual_public_commit(self, repo_owner, repo_name, commit_sha, cleanup = True):
         repo = self.api.get_user(login = repo_owner).get_repo(repo_name)
@@ -90,13 +88,23 @@ class GithubCommitCrawler(object):
 
     def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
         for repo in filterfalse(skip, user.get_repos(**{'type': 'all'})):
-            if remote_only:
-                for commit in repo.get_commits(author = user.login):
-                    callback(repo.full_name, commit)
-            else:
-                with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
-                    for commit in repo.get_commits(author = user.login):
-                        callback(repo.full_name, local_repo.commit(commit.sha))
+            try:
+                self._crawl_user_repo(repo, user, callback, remote_only, cleanup)
+            except GithubException as exc:
+                LOGGER.exc('Crawling repo "{}" failed!'.format(repo.full_name))
+
+    def _crawl_user_repo(self, repo, user, callback, remote_only, cleanup):
+        all_commits = repo.get_commits(author = user.login)
+        if remote_only:
+            for commit in all_commits:
+                callback(repo.full_name, commit)
+        else:
+            if not next(all_commits.__iter__(), None): #totalCount doesn't work
+                LOGGER.debug('Skipping repo "{}" because user {} has no commits on it'.format(repo.full_name, user.login))
+                return
+            with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
+                for commit in all_commits:
+                    callback(repo.full_name, local_repo.commit(commit.sha))
 
 
 class RateLimitAwareGithubAPI(Github):
@@ -140,6 +148,10 @@ class RateLimitAwareRequester(Requester):
             return response
         except ConnectionResetError as exc:
             LOGGER.exception('Connection reset! Trying again...')
+            self.consecutive_failed_attempts += 1
+            return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
+        except ConnectionRefusedError as exc:
+            LOGGER.exception('Connection refused! Trying again...')
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except RateLimitExceededException:
