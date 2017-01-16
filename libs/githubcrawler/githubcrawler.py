@@ -61,6 +61,10 @@ class GithubCommitCrawler(object):
         self.clone_config = {**DEFAULT_CONFIG, **clone_config}
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
 
+    @property
+    def authorized_login(self):
+        return self.api.get_user().login
+
     def crawl_public_repos(self, username, callback, skip = lambda repo: false, remote_only = False):
         user = self.api.get_user(login = username)
         self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
