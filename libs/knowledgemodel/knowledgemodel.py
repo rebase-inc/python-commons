@@ -62,8 +62,8 @@ class KnowledgeModel(KnowledgeLevel):
 
     def _load_from_s3(self):
         knowledge = self.s3object.getdata()
-        self._version = knowledge['version']
-        self._simple_projection = knowledge['knowledge']
+        self._version = knowledge['version'] if 'version' in knowledge else 0
+        self._simple_projection = knowledge['knowledge'] if 'knowledge' in knowledge else knowledge
 
     def exists(self):
         try:
@@ -91,7 +91,7 @@ class KnowledgeModel(KnowledgeLevel):
             obj = self.bucket.Object(key = key)
             etag = obj.put(Body = bytes('', 'utf-8'))['ETag']
             all_objects[etag] = obj
-    
+
         self.walk(_update_leaderboard_entry)
 
         for etag, obj in all_objects.items():
