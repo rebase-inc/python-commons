@@ -1,12 +1,18 @@
+import re
 import os
 import json
 import math
 import time
-import boto3
+import bisect
+import pickle
 import logging
 import datetime
 
 from typing import Union
+
+import boto3
+import botocore
+import psycopg2
 
 from .knowledgelevel import KnowledgeLevel
 from .knowledgeleaf import KnowledgeLeaf
@@ -18,41 +24,112 @@ logging.getLogger('boto3').setLevel(logging.WARNING)
 logging.getLogger('botocore').setLevel(logging.WARNING)
 
 class KnowledgeModel(KnowledgeLevel):
-    VERSION = '1.0.0' # use semvar
+    VERSION = '1'
 
-    def __init__(self):
+    def __init__(self, username = None, bucket = None, s3config = None):
         super().__init__(LanguageKnowledge)
+        self.username = username
+        self.bucket_name = bucket
+        self.s3config = s3config
 
     @property
     def simple_projection(self):
-        return { name: language.simple_projection for name, language in self.items() }
+        if self.items:
+            return { name: language.simple_projection for name, language in self.items() }
+        elif hasattr(self, '_simple_projection'):
+            return self._simple_projection
+        else:
+            self._load_from_s3()
+            return self._simple_projection
 
-    def write_to_s3(self, username, bucket, s3config):
+    @property
+    def bucket(self):
+        if hasattr(self, '_bucket'):
+            return self._bucket
+        else:
+            self._bucket = boto3.resource('s3', **self.s3config).Bucket(self.bucket_name)
+            return self._bucket
+
+    @property
+    def s3object(self):
+        if hasattr(self, '_s3object'):
+            return self._s3object
+        else:
+            self._s3object = self.bucket.Object('users/{}'.format(self.username))
+            setattr(self._s3object, 'getdata', lambda: json.loads(self._s3object.get()['Body'].read().decode()))
+            setattr(self._s3object, 'putdata', lambda data: self._s3object.put(Body = json.dumps(data))['ETag'])
+            return self._s3object
+
+    def _load_from_s3(self):
+        knowledge = self.s3object.getdata()
+        self._version = knowledge['version']
+        self._simple_projection = knowledge['knowledge']
+
+    def exists(self):
+        try:
+            self._load_from_s3()
+            return self._version == self.VERSION
+        except botocore.exceptions.ClientError as e:
+            return False
+
+    def walk(self, callback):
+        for language, modules in self.simple_projection.items():
+            for module, knowledge in modules.items():
+                callback(language, module, knowledge)
+
+    def save(self, wait_for_consistency = True):
         start = time.time()
-        LOGGER.debug('Writing knowledge for user {} to s3'.format(username))
-        written_objects = {}
-        s3bucket = boto3.resource('s3', **s3config).Bucket(bucket)
-        knowledge_object = s3bucket.Object('users/{}'.format(username))
-        etag = knowledge_object.put(Body = json.dumps({
-            'version': self.VERSION,
-            'knowledge': self.simple_projection
-            }))['ETag']
-        written_objects[etag] = knowledge_object
+        LOGGER.debug('Writing knowledge for user {} to s3'.format(self.username))
+        etag = self.s3object.putdata({ 'version': self.VERSION, 'knowledge': self.simple_projection })
+        all_objects = { etag: self.s3object }
 
-        for lang_name, lang_knowledge in self.simple_projection.items():
-            for mod_name, mod_knowledge in lang_knowledge.items():
-                prefix = 'leaderboard/{}/{}/{}'.format(lang_name, mod_name, username)
-                for obj in s3bucket.objects.filter(Prefix = prefix):
-                    obj.delete()
-                key = prefix + ':{:.2f}'.format(mod_knowledge)
-                obj = s3bucket.Object(key = key)
-                etag = obj.put(Body = bytes('', 'utf-8'))['ETag']
-                written_objects[etag] = obj
+        def _update_leaderboard_entry(language, module, knowledge):
+            prefix = 'leaderboard/{}/{}/{}'.format(language, module, self.username)
+            for obj in self.bucket.objects.filter(Prefix = prefix):
+                obj.delete()
+            key = prefix + ':{:.2f}'.format(knowledge)
+            obj = self.bucket.Object(key = key)
+            etag = obj.put(Body = bytes('', 'utf-8'))['ETag']
+            all_objects[etag] = obj
+    
+        self.walk(_update_leaderboard_entry)
 
-        for etag, obj in written_objects.items():
+        for etag, obj in all_objects.items():
             obj.wait_until_exists(IfMatch = etag)
         LOGGER.debug('Writing knowledge to s3 took {} seconds'.format(time.time() - start))
 
+    def calculate_rankings(self):
+        rankings = dict()
+        for language, modules in self.simple_projection.items():
+            rankings[language] = dict()
+            for module, score in modules.items():
+                rankings[language][module] = self._get_ranking(s3bucket, language, module, score)
+
+        self._write_rankings_to_db(rankings)
+
+    def _get_ranking(self, s3bucket, language, module, score):
+        knowledge_regex = re.compile('.*\:([0-9,.]+)')
+        key = 'leaderboard/{}/{}/'.format(language, module)
+        score = float('{:.2f}'.format(score))
+
+        all_users = []
+        for user in s3bucket.objects.filter(Prefix = key):
+            knowledge = float(re.match('.*\:([0-9,.]+)', user.key).group(1))
+            all_users.append(knowledge)
+        all_users = sorted(all_users, reverse = True)
+
+        return bisect.bisect_right(all_users, score) / len(all_users)
+
+    def _write_rankings_to_db(self, rankings):
+        with psycopg2.connect(dbname = 'postgres', user = 'postgres', password = '', host = 'database') as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT id FROM github_user WHERE login = %(github_id)s', {'github_id': self.username})
+                github_user_id = cursor.fetchone()[0]
+                cursor.execute('SELECT user_id FROM github_account WHERE github_user_id = %(github_user_id)s', {'github_user_id': github_user_id})
+                user_id = cursor.fetchone()[0]
+                cursor.execute('SELECT id FROM role WHERE user_id = %(user_id)s AND type = %(type)s', {'user_id': user_id, 'type': 'contractor'})
+                skill_set_id = cursor.fetchone()[0] # skill_set_id == contractor_id
+                cursor.execute('UPDATE skill_set SET skills=%(skills)s WHERE id=%(skill_set_id)s', {'skills': pickle.dumps(rankings), 'skill_set_id': skill_set_id})
 
 class LanguageKnowledge(KnowledgeLevel):
 
@@ -174,4 +251,3 @@ if __name__ == '__main__':
     # testing incorrect length references
     person_3.add_reference('python', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
     person_3.add_reference('python', 'socket', 'socket', 'recv', date = datetime.date.today() - datetime.timedelta(days=1800), count = 1)
-
