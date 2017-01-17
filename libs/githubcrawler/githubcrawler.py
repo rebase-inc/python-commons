@@ -10,7 +10,7 @@ from functools import lru_cache
 from itertools import filterfalse
 from collections import Counter
 
-from github import Github, GithubObject, GithubException, RateLimitExceededException
+from github import Github, GithubObject, GithubException, RateLimitExceededException, BadCredentialsException
 from github.Requester import Requester
 from github.MainClass import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, DEFAULT_PER_PAGE
 
@@ -167,7 +167,10 @@ class RateLimitAwareRequester(Requester):
             self.wait_until = datetime.utcfromtimestamp(self.rate_limiting_resettime)
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
-        except socket.timeout:
+        except BadCredentialsException as exc:
+            LOGGER.info('Got "Bad Credentials" error from GitHub. This seems to be a bug in the GitHub API. Trying again...')
+            return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
+        except socket.timeout as exc:
             LOGGER.info('Socket timeout! Trying again...')
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
