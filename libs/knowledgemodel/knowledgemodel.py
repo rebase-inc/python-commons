@@ -34,12 +34,14 @@ class KnowledgeModel(KnowledgeLevel):
 
     @property
     def simple_projection(self):
-        if self.items:
+        if self.items():
+            LOGGER.info('items are {}'.format(str(self.items)))
             return { name: language.simple_projection for name, language in self.items() }
         elif hasattr(self, '_simple_projection'):
             return self._simple_projection
         else:
             self._load_from_s3()
+            LOGGER.info('simple projection loaded from s3 is ' + str(self._simple_projection))
             return self._simple_projection
 
     @property
@@ -103,22 +105,21 @@ class KnowledgeModel(KnowledgeLevel):
         for language, modules in self.simple_projection.items():
             rankings[language] = dict()
             for module, score in modules.items():
-                rankings[language][module] = self._get_ranking(s3bucket, language, module, score)
-
+                rankings[language][module] = self._get_ranking(language, module, score)
         self._write_rankings_to_db(rankings)
 
-    def _get_ranking(self, s3bucket, language, module, score):
+    def _get_ranking(self, language, module, score):
         knowledge_regex = re.compile('.*\:([0-9,.]+)')
         key = 'leaderboard/{}/{}/'.format(language, module)
         score = float('{:.2f}'.format(score))
 
         all_users = []
-        for user in s3bucket.objects.filter(Prefix = key):
+        for user in self.bucket.objects.filter(Prefix = key):
             knowledge = float(re.match('.*\:([0-9,.]+)', user.key).group(1))
             all_users.append(knowledge)
-        all_users = sorted(all_users, reverse = True)
+        all_users = sorted(all_users)
 
-        return bisect.bisect_right(all_users, score) / len(all_users)
+        return 1 - (bisect.bisect_right(all_users, score) / len(all_users))
 
     def _write_rankings_to_db(self, rankings):
         with psycopg2.connect(dbname = 'postgres', user = 'postgres', password = '', host = 'database') as connection:
