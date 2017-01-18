@@ -64,7 +64,9 @@ class LanguageParser(metaclass = abc.ABCMeta):
 
     @abc.abstractmethod
     def check_relevance(self, module):
-        return int(self.relevance_checker.send(json.dumps({ 'module': module.split('.')[0] }))['impact']) > 0
+        is_grammar = module.split('.')[0] == '__grammar__'
+        is_stdlib = module.split('.')[0] == '__stdlib__'
+        return is_grammar or is_stdlib or bool(int(self.relevance_checker.send(json.dumps({ 'module': module.split('.')[0] }))['impact']) > 0)
 
     def analyze_blob(self, repo_name, commit, path):
         module_counts = self.get_module_counts(repo_name, commit, path)

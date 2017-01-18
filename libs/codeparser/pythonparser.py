@@ -1,7 +1,5 @@
 from functools import reduce
 
-from stdlib_list import stdlib_list, long_versions
-
 from asynctcp import BlockingTcpClient
 
 from . import LanguageParser
@@ -14,15 +12,8 @@ IMPACT_HOST = 'python_impact'
 IMPACT_PORT = 25000
 
 
-class StdLib(set):
-
-    def __contains__(self, module):
-        return module.startswith('__grammar__') or super().__contains__(module)
-
-
 class PythonParser(LanguageParser):
     language = 'python'
-    stdlib = StdLib(reduce(lambda namespace, version: namespace.union(set(stdlib_list(version))), long_versions, set()))
 
     def __init__(self, callback):
         super().__init__(callback)
@@ -34,7 +25,7 @@ class PythonParser(LanguageParser):
         return super().get_context(repo_name, commit, path)
 
     def check_relevance(self, module):
-        return module.split('.')[0] in self.stdlib or super().check_relevance(module)
+        return super().check_relevance(module)
 
     @property
     def relevance_checker(self):

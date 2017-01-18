@@ -34,12 +34,6 @@ class KnowledgeModel(KnowledgeLevel):
         self.bucket_name = bucket
         self.s3config = s3config
 
-        # I'm sorry for this...
-        self.impact_services = {
-                'python': BlockingTcpClient('python_impact', 25000, timeout = 60),
-                'javascript': BlockingTcpClient('javascript_impact', 9999, timeout = 60)
-                }
-
     @property
     def simple_projection(self):
         if self.items():
@@ -116,25 +110,20 @@ class KnowledgeModel(KnowledgeLevel):
         # concept of stdlib and grammar and don't have to use special module names
         rankings = dict()
         for language, modules in self.simple_projection.items():
-            rankings[language] = { 'modules': dict(), 'impact': self._get_impact(language) }
+            rankings[language] = { 'modules': dict() }
             for module, score in modules.items():
                 if module == '__overall__':
-                    rankings[language]['percentile'] = self._get_ranking(language, module, score)
+                    ranking, count = self._get_ranking(language, module, score)
+                    rankings[language]['rank'] = ranking
+                    rankings[language]['population'] = count
                 elif module in ['__grammar__', '__stdlib__']:
-                    rankings[language][module.strip('_')] = { 'percentile': self._get_ranking(language, module, score) }
+                    ranking, count = self._get_ranking(language, module, score)
+                    rankings[language][module.strip('_')] = { 'rank': ranking, 'population': count }
                 else:
-                    rankings[language]['modules'][module] = { 'percentile': self._get_ranking(language, module, score), 'impact': self._get_impact(language, module) }
+                    ranking, count = self._get_ranking(language, module, score)
+                    rankings[language]['modules'][module] = { 'rank': ranking, 'population': count }
+                    #rankings[language]['modules'][module] = { 'percentile': self._get_ranking(language, module, score), 'impact': self._get_impact(language, module) }
         self._write_rankings_to_db(rankings)
-
-    def _get_impact(self, language, module = None):
-        # TODO: Do this somewhere else so we don't have duplicated code between here and codeparser
-        if module == None:
-            return {'javascript': 3461415, 'python': 1654266 }[language] # BS numbers
-        try:
-            return self.impact_services[language].send(json.dumps({ 'module': module }))['impact']
-        except Exception:
-            # this is horrible, I know. It's temporary (hopefully)
-            return self.impact_services[language].send(json.dumps({ 'module': module }))['impact']
 
     def _get_ranking(self, language, module, score):
         knowledge_regex = re.compile('.*\:([0-9,.]+)')
@@ -147,7 +136,7 @@ class KnowledgeModel(KnowledgeLevel):
             all_users.append(knowledge)
         all_users = sorted(all_users)
 
-        return 1 - (bisect.bisect_right(all_users, score) / len(all_users))
+        return (len(all_users) - bisect.bisect_right(all_users, score), len(all_users) + 1)
 
     def _write_rankings_to_db(self, rankings):
         with psycopg2.connect(dbname = 'postgres', user = 'postgres', password = '', host = 'database') as connection:
