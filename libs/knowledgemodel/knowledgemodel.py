@@ -17,6 +17,8 @@ import psycopg2
 from .knowledgelevel import KnowledgeLevel
 from .knowledgeleaf import KnowledgeLeaf
 
+from asynctcp import BlockingTcpClient
+
 OVERALL_KEY = '__overall__'
 
 LOGGER = logging.getLogger()
@@ -32,16 +34,20 @@ class KnowledgeModel(KnowledgeLevel):
         self.bucket_name = bucket
         self.s3config = s3config
 
+        # I'm sorry for this...
+        self.impact_services = {
+                'python': BlockingTcpClient('python_impact', 25000, timeout = 60),
+                'javascript': BlockingTcpClient('javascript_impact', 9999, timeout = 60)
+                }
+
     @property
     def simple_projection(self):
         if self.items():
-            LOGGER.info('items are {}'.format(str(self.items)))
             return { name: language.simple_projection for name, language in self.items() }
         elif hasattr(self, '_simple_projection'):
             return self._simple_projection
         else:
-            self._load_from_s3()
-            LOGGER.info('simple projection loaded from s3 is ' + str(self._simple_projection))
+            self._version, self._simple_projection = self._load_from_s3()
             return self._simple_projection
 
     @property
@@ -63,15 +69,20 @@ class KnowledgeModel(KnowledgeLevel):
             return self._s3object
 
     def _load_from_s3(self):
-        knowledge = self.s3object.getdata()
-        self._version = knowledge['version'] if 'version' in knowledge else 0
-        self._simple_projection = knowledge['knowledge'] if 'knowledge' in knowledge else knowledge
+        try:
+            knowledge = self.s3object.getdata()
+            version = knowledge['version'] if 'version' in knowledge else 0
+            simple_projection = knowledge['knowledge'] if 'knowledge' in knowledge else knowledge
+        except botocore.exceptions.ClientError as exc:
+            version = 0
+            simple_projection = dict()
+        return (version, simple_projection)
 
     def exists(self):
         try:
-            self._load_from_s3()
+            self._version, self._simple_projection = self._load_from_s3()
             return self._version == self.VERSION
-        except botocore.exceptions.ClientError as e:
+        except botocore.exceptions.ClientError as exc:
             return False
 
     def walk(self, callback):
@@ -101,12 +112,29 @@ class KnowledgeModel(KnowledgeLevel):
         LOGGER.debug('Writing knowledge to s3 took {} seconds'.format(time.time() - start))
 
     def calculate_rankings(self):
+        # TODO: modify underlying knowledge model so that we actually have the
+        # concept of stdlib and grammar and don't have to use special module names
         rankings = dict()
         for language, modules in self.simple_projection.items():
-            rankings[language] = dict()
+            rankings[language] = { 'modules': dict(), 'impact': self._get_impact(language) }
             for module, score in modules.items():
-                rankings[language][module] = self._get_ranking(language, module, score)
+                if module == '__overall__':
+                    rankings[language]['percentile'] = self._get_ranking(language, module, score)
+                elif module in ['__grammar__', '__stdlib__']:
+                    rankings[language][module.strip('_')] = { 'percentile': self._get_ranking(language, module, score) }
+                else:
+                    rankings[language]['modules'][module] = { 'percentile': self._get_ranking(language, module, score), 'impact': self._get_impact(language, module) }
         self._write_rankings_to_db(rankings)
+
+    def _get_impact(self, language, module = None):
+        # TODO: Do this somewhere else so we don't have duplicated code between here and codeparser
+        if module == None:
+            return {'javascript': 3461415, 'python': 1654266 }[language] # BS numbers
+        try:
+            return self.impact_services[language].send(json.dumps({ 'module': module }))['impact']
+        except Exception:
+            # this is horrible, I know. It's temporary (hopefully)
+            return self.impact_services[language].send(json.dumps({ 'module': module }))['impact']
 
     def _get_ranking(self, language, module, score):
         knowledge_regex = re.compile('.*\:([0-9,.]+)')
