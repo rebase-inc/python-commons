@@ -20,6 +20,7 @@ from .knowledgeleaf import KnowledgeLeaf
 from asynctcp import BlockingTcpClient
 
 OVERALL_KEY = '__overall__'
+STDLIB_KEY = '__stdlib__'
 
 LOGGER = logging.getLogger()
 logging.getLogger('boto3').setLevel(logging.WARNING)
@@ -116,13 +117,12 @@ class KnowledgeModel(KnowledgeLevel):
                     ranking, count = self._get_ranking(language, module, score)
                     rankings[language]['rank'] = ranking
                     rankings[language]['population'] = count
-                elif module in ['__grammar__', '__stdlib__']:
+                elif module == '__stdlib__':
                     ranking, count = self._get_ranking(language, module, score)
-                    rankings[language][module.strip('_')] = { 'rank': ranking, 'population': count }
+                    rankings[language]['stdlib'] = { 'rank': ranking, 'population': count }
                 else:
                     ranking, count = self._get_ranking(language, module, score)
                     rankings[language]['modules'][module] = { 'rank': ranking, 'population': count }
-                    #rankings[language]['modules'][module] = { 'percentile': self._get_ranking(language, module, score), 'impact': self._get_impact(language, module) }
         self._write_rankings_to_db(rankings)
 
     def _get_ranking(self, language, module, score):
