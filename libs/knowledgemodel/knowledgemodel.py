@@ -21,6 +21,7 @@ from asynctcp import BlockingTcpClient
 
 OVERALL_KEY = '__overall__'
 STDLIB_KEY = '__stdlib__'
+PRIVATE_KEY = '__private__'
 
 LOGGER = logging.getLogger()
 logging.getLogger('boto3').setLevel(logging.WARNING)
@@ -113,16 +114,14 @@ class KnowledgeModel(KnowledgeLevel):
         for language, modules in self.simple_projection.items():
             rankings[language] = { 'modules': dict() }
             for module, score in modules.items():
-                if module == '__overall__':
-                    ranking, count = self._get_ranking(language, module, score)
-                    rankings[language]['rank'] = ranking
-                    rankings[language]['population'] = count
-                elif module == '__stdlib__':
-                    ranking, count = self._get_ranking(language, module, score)
-                    rankings[language]['stdlib'] = { 'rank': ranking, 'population': count }
+                if module == OVERALL_KEY:
+                    rankings[language].update(self._get_ranking(language, module, score))
+                elif module == STDLIB_KEY:
+                    rankings[language]['stdlib'] = self._get_ranking(language, module, score)
+                elif module == PRIVATE_KEY:
+                    pass
                 else:
-                    ranking, count = self._get_ranking(language, module, score)
-                    rankings[language]['modules'][module] = { 'rank': ranking, 'population': count }
+                    rankings[language]['modules'][module] = self._get_ranking(language, module, score)
         self._write_rankings_to_db(rankings)
 
     def _get_ranking(self, language, module, score):
@@ -136,7 +135,11 @@ class KnowledgeModel(KnowledgeLevel):
             all_users.append(knowledge)
         all_users = sorted(all_users)
 
-        return (len(all_users) - bisect.bisect_right(all_users, score), len(all_users) + 1)
+        return {
+                'rank': len(all_users) - bisect.bisect(all_users, score),
+                'population': len(all_users) + 1,
+                'relevance': int(sum(all_users) + score)
+                }
 
     def _write_rankings_to_db(self, rankings):
         with psycopg2.connect(dbname = 'postgres', user = 'postgres', password = '', host = 'database') as connection:
