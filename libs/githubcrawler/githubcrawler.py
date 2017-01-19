@@ -9,6 +9,9 @@ from datetime import datetime
 from functools import lru_cache
 from itertools import filterfalse
 from collections import Counter
+from http.client import IncompleteRead
+
+from frozendict import frozendict
 
 from github import Github, GithubObject, GithubException, RateLimitExceededException, BadCredentialsException
 from github.Requester import Requester
@@ -74,12 +77,14 @@ class GithubCommitCrawler(object):
         self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
 
     def crawl_individual_public_repo(self, owner, name, callback, remote_only = False, cleanup = True):
-        repo = self.api.get_user(login = owner).get_repo(repo_name)
-        self._crawl_user_repo(repo, user, callback, skip, remote_only, cleanup)
+        user = self.api.get_user(login = owner) 
+        repo = user.get_repo(name)
+        self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
     def crawl_individual_authorized_repo(self, name, callback, remote_only = False, cleanup = True):
-        repo = self.api.get_user().get_repo(repo_name)
-        self._crawl_user_repo(repo, user, callback, skip, remote_only, cleanup)
+        user = self.api.get_user() 
+        repo = user.get_repo(name)
+        self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
     def crawl_individual_public_commit(self, repo_owner, repo_name, commit_sha, cleanup = True):
         repo = self.api.get_user(login = repo_owner).get_repo(repo_name)
@@ -97,11 +102,11 @@ class GithubCommitCrawler(object):
         repos = filterfalse(skip, filterfalse(lambda r: r.fork, user.get_repos(type = 'all')))
         for repo in repos:
             try:
-                self._crawl_user_repo(repo, user, callback, remote_only, cleanup)
+                self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
             except GithubException as exc:
-                LOGGER.exc('Crawling repo "{}" failed!'.format(repo.full_name))
+                LOGGER.exc('Crawling repo "{}" failed! Continuing...'.format(repo.full_name))
 
-    def _crawl_user_repo(self, repo, user, callback, remote_only, cleanup):
+    def _crawl_user_repo(self, user, repo, callback, remote_only, cleanup):
         all_commits = repo.get_commits(author = user.login)
         if remote_only:
             for commit in all_commits:
@@ -127,10 +132,6 @@ class RateLimitAwareGithubAPI(Github):
             timeout=timeout, client_id=client_id, client_secret=client_secret, user_agent=user_agent,
             per_page=per_page, api_preview=api_preview)
 
-class HashableDict(dict):
-    def __hash__(self):
-        return hash(tuple(sorted(self.items())))
-
 class RateLimitAwareRequester(Requester):
 
     def __init__(self, max_retries = 3, *args, **kwargs):
@@ -155,11 +156,11 @@ class RateLimitAwareRequester(Requester):
             self.consecutive_failed_attempts = 0
             return response
         except ConnectionResetError as exc:
-            LOGGER.exception('Connection reset! Trying again...')
+            LOGGER.error('Connection reset trying to reach {}! Trying again...'.format(url))
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except ConnectionRefusedError as exc:
-            LOGGER.exception('Connection refused! Trying again...')
+            LOGGER.error('Connection refused trying to reach {}! Trying again...'.format(url))
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except RateLimitExceededException:
@@ -168,13 +169,17 @@ class RateLimitAwareRequester(Requester):
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except BadCredentialsException as exc:
-            LOGGER.info('Got "Bad Credentials" error from GitHub. This seems to be a bug in the GitHub API. Trying again...')
+            LOGGER.error('Got "Bad Credentials" trying to reach {}! This seems to be a bug in the GitHub API. Trying again...'.format(url))
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
         except socket.timeout as exc:
-            LOGGER.info('Socket timeout! Trying again...')
+            LOGGER.error('Socket timeout trying to reach {}! This seems to be a bug in the GitHub API. Trying again...'.format(url))
+            self.consecutive_failed_attempts += 1
+            return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
+        except IncompleteRead as exc:
+            LOGGER.error('Incomplete read from {}! This seems to be a bug in the GitHub API. Trying again...'.format(url))
             self.consecutive_failed_attempts += 1
             return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
 
     def _Requester__requestEncode(self, cnx, verb, url, parameters, requestHeaders, input, encode):
-        parameters = HashableDict(parameters) if isinstance(parameters, dict) else parameters
+        parameters = frozendict(parameters) if isinstance(parameters, dict) else parameters
         return self.__requestEncode(cnx, verb, url, parameters, requestHeaders, input, encode)
