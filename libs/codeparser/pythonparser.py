@@ -27,22 +27,22 @@ class PythonParser(LanguageParser):
 
     def _relative_module_name(self, current_path, module_path):
         # TODO: Improve so that it provides relative imports as well (e.g. from ..foo import bar)
-        relative_name = module_path.replace(os.path.dirname(current_path) + '/', '')
-        without_extension = os.path.splitext(relative_name)[0].replace('__init__', '').strip('/')
-        importable_name = without_extension.replace('/','.')
-        return importable_name or '.'
+        current_module = os.path.dirname(current_path).replace('/','.')
+        relative_module = module_path.replace(current_module, '', 1).strip('.')
+        return relative_module or '.'
 
     def get_context(self, repo_name, commit, path):
         private_modules = self.get_private_modules(commit.tree)
-        private_modules = {'private_modules': tuple( self._relative_module_name(path, module) for module in private_modules )}
-        return {**super().get_context(repo_name, commit, path), **private_modules }
+        private_modules += tuple( self._relative_module_name(path, module) for module in private_modules )
+        return {**super().get_context(repo_name, commit, path), **{'private_modules': private_modules} }
 
     @lru_cache()
     def get_private_modules(self, tree):
         # NOTE: be careful about changing the signature of this function because of the lru_cache
         modules = []
         for blob in tree.traverse(predicate = lambda item, depth: item.type == 'blob' and item.path.endswith('.py')):
-            modules.append(blob.path)
+            without_extension = os.path.splitext(blob.path)[0].replace('__init__', '').strip('/')
+            modules.append(without_extension.replace('/','.'))
         return tuple(modules)
 
     def check_relevance(self, module):
