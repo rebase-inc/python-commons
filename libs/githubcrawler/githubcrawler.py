@@ -100,11 +100,8 @@ class GithubCommitCrawler(object):
 
     def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
         repos = filterfalse(skip, filterfalse(lambda r: r.fork, user.get_repos(type = 'all')))
-        for repo in repos:
-            try:
-                self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
-            except GithubException as exc:
-                LOGGER.exc('Crawling repo "{}" failed! Continuing...'.format(repo.full_name))
+        for repo in self._handle_github_exceptions(repos):
+            self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
     def _crawl_user_repo(self, user, repo, callback, remote_only, cleanup):
         all_commits = repo.get_commits(author = user.login)
@@ -119,6 +116,15 @@ class GithubCommitCrawler(object):
                 for commit in all_commits:
                     callback(repo.full_name, local_repo.commit(commit.sha))
 
+    @classmethod
+    def _handle_github_exceptions(cls, generator):
+        while True:
+            try:
+                yield next(generator)
+            except StopIteration:
+                raise
+            except GithubException as exc:
+                LOGGER.error('Crawling repo failed! {}'.format(str(exc.data)))
 
 class RateLimitAwareGithubAPI(Github):
 
