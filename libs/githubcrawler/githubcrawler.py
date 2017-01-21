@@ -77,12 +77,12 @@ class GithubCommitCrawler(object):
         self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
 
     def crawl_individual_public_repo(self, owner, name, callback, remote_only = False, cleanup = True):
-        user = self.api.get_user(login = owner) 
+        user = self.api.get_user(login = owner)
         repo = user.get_repo(name)
         self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
     def crawl_individual_authorized_repo(self, name, callback, remote_only = False, cleanup = True):
-        user = self.api.get_user() 
+        user = self.api.get_user()
         repo = user.get_repo(name)
         self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 

@@ -35,11 +35,8 @@ class LanguageParser(metaclass = abc.ABCMeta):
             if response and 'error' not in response:
                 break
         else:
-            LOGGER.error(str(response))
             raise exceptions.UnparsableCode(self.language, context['url'])
-        # always try the last successful parser first on the next round
         self.parsers.insert(0, self.parsers.pop(index))
-
         return response
 
     def close(self):
@@ -64,9 +61,13 @@ class LanguageParser(metaclass = abc.ABCMeta):
 
     @abc.abstractmethod
     def check_relevance(self, module):
-        is_grammar = module.split('.')[0] == '__grammar__'
-        is_stdlib = module.split('.')[0] == '__stdlib__'
-        return is_grammar or is_stdlib or bool(int(self.relevance_checker.send(json.dumps({ 'module': module.split('.')[0] }))['impact']) > 0)
+        if module.split('.')[0] == '__stdlib__':
+            return True
+        elif module.split('.')[0] == '__private__':
+            return False
+        else:
+            relevance = int(self.relevance_checker.send(json.dumps({ 'module': module.split('.')[0] }))['impact'])
+            return bool(relevance > 0)
 
     def analyze_blob(self, repo_name, commit, path):
         module_counts = self.get_module_counts(repo_name, commit, path)

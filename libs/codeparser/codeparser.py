@@ -57,7 +57,7 @@ class CodeParser(object):
                 self.get_parser(diff.b_path).analyze_diff(repo_name, commit, diff)
 
     def analyze_initial_commit(self, repo_name, commit):
-        for blob in commit.tree.traverse(predicate = lambda item, depth: item.type == 'blob'):
+        for blob in commit.tree.traverse(predicate = lambda item, depth: item.type == 'blob', visit_once = True):
             self.get_parser(blob.path).analyze_blob(repo_name, commit, blob.path)
 
     def close(self):
