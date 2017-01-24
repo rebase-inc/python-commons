@@ -21,7 +21,7 @@ class CodeParser(object):
         self.health = ParserHealth()
 
     def guess_language(self, path):
-        mimetype = self.mimetypes.guess_type(path)[0] or ''
+        mimetype = self.mimetypes.guess_type(path, strict=False)[0] or ''
         match = self.mimetype_regex.match(mimetype)
         if match:
             return match.group('language')
