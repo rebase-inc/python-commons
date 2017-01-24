@@ -53,7 +53,8 @@ class ClonedRepository(object):
         return self.repo
 
     def __exit__(self, exc_type, exc_value, traceback):
-        del self.repo # prevents git command processes from hanging around
+        #del self.repo # prevents git command processes from hanging around
+        self.repo.git.clear_cache()
         if self.cleanup:
             shutil.rmtree(self.path, ignore_errors = True)
 
@@ -86,17 +87,21 @@ class GithubCommitCrawler(object):
         repo = user.get_repo(name)
         self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
-    def crawl_individual_public_commit(self, repo_owner, repo_name, commit_sha, cleanup = True):
+    def crawl_individual_public_commit(self, repo_owner, repo_name, commit_sha, callback, remote_only = False, cleanup = True):
         repo = self.api.get_user(login = repo_owner).get_repo(repo_name)
-        with ClonedRepository(repo, self.access_token, self.clone_config, cleanup = cleanup) as local_repo:
-            commit = repo.get_commit(commit_sha)
-            callback(repo.full_name, commit)
+        if remote_only:
+            callback(repo.full_name, repo.get_commit(commit_sha))
+        else:
+            with ClonedRepository(repo, self.access_token, self.clone_config, cleanup = cleanup) as local_repo:
+                callback(repo.full_name, local_repo.commit(commit_sha))
 
-    def crawl_individual_authorized_commit(self, repo_name, commit_sha, cleanup = True):
+    def crawl_individual_authorized_commit(self, repo_name, commit_sha, callback, remote_only = False, cleanup = True):
         repo = self.api.get_user().get_repo(repo_name)
-        with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
-            commit = repo.get_commit(commit_sha)
-            callback(repo.full_name, commit)
+        if remote_only:
+            callback(repo.full_name, repo.get_commit(commit_sha))
+        else:
+            with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
+                callback(repo.full_name, local_repo.commit(commit_sha))
 
     def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
         repos = filterfalse(skip, filterfalse(lambda r: r.fork, user.get_repos(type = 'all')))
