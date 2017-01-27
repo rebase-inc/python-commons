@@ -12,9 +12,11 @@ setup(
     version='0.0.1',
     py_modules=[
         '__init__',
-        'knowledgeleaf',
-        'knowledgelevel',
         'knowledgemodel',
+        'populationmodel',
+        's3population',
+        'postgrespopulation',
+        'rankingmodel'
     ],
     install_requires = REQUIREMENTS
     )
