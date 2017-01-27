@@ -44,6 +44,9 @@ class PostgresPopulation(Population):
     def user_ranking_exists(self, username, version = None):
         raise NotImplementedError()
 
+    def get_user_knowledge(self, username):
+        raise NotImplementedError()
+
     def add_user_ranking(self, username, ranking):
         nested = NestedDefaultDict(depth = self.depth, leaf_factory = float)
         for name, knowledge in ranking.items():
