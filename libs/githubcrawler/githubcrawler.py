@@ -17,90 +17,39 @@ from github import Github, GithubObject, GithubException, RateLimitExceededExcep
 from github.Requester import Requester
 from github.MainClass import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, DEFAULT_PER_PAGE
 
+from . import ClonedRepository
+
 LOGGER = logging.getLogger()
 logging.getLogger('github').setLevel(logging.WARNING)
-logging.getLogger('git').setLevel(logging.WARNING)
-
-DEFAULT_CONFIG = {
-        'tmpfs_dir': '/repos',
-        'fs_dir': '/bigrepos',
-        'tmpfs_cutoff': 262144000 # 250M
-        }
-
-class ClonedRepository(object):
-
-    def __init__(self, remote, token, config = DEFAULT_CONFIG, cleanup = True):
-        prefix = 'https://{token}@github.com'.format(token = token)
-        url = remote.clone_url.replace('https://github.com', prefix, 1)
-        in_memory = remote.size <= config['tmpfs_cutoff']
-        self.cleanup = cleanup
-        try:
-            self.path = os.path.join(config['tmpfs_dir'] if in_memory else config['fs_dir'], remote.name)
-            LOGGER.debug('Cloning repo "{}" {}'.format(remote.full_name, 'in memory' if in_memory else 'to filesystem'))
-            self.repo = git.Repo.clone_from(url, self.path, progress = config['progress'] if 'progress' in config else None)
-        except git.exc.GitCommandError as exc:
-            if hasattr(self, 'repo'):
-                del self.repo
-            shutil.rmtree(self.path, ignore_errors = True)
-            if in_memory:
-                LOGGER.error('Failed to clone repo "{}" to memory, trying to clone to filesystem'.format(remote.full_name))
-                self.path = os.path.join(config['fs_dir'], remote.name)
-                self.repo = git.Repo.clone_from(url, self.path, progress = config['progress'] if 'progress' in config else None)
-            else:
-                raise exc
-
-    def __enter__(self):
-        return self.repo
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        #del self.repo # prevents git command processes from hanging around
-        self.repo.git.clear_cache()
-        if self.cleanup:
-            shutil.rmtree(self.path, ignore_errors = True)
 
 class GithubCommitCrawler(object):
 
-    def __init__(self, access_token, clone_config = DEFAULT_CONFIG):
+    def __init__(self, access_token, config, login = None, keepalive = None):
         self.access_token = access_token
-        self.clone_config = {**DEFAULT_CONFIG, **clone_config}
+        self.config = config
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
+        self.keepalive = keepalive
+        self.login = login or GithubObject.NotSet 
 
     @property
     def authorized_login(self):
         return self.api.get_user().login
 
-    def crawl_public_repos(self, username, callback, skip = lambda repo: false, remote_only = False):
-        user = self.api.get_user(login = username)
+    def crawl_repos(self, callback, skip = lambda repo: false, remote_only = False):
+        user = self.api.get_user(login = self.login)
         self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
 
-    def crawl_authorized_repos(self, callback, skip = lambda repo: False, remote_only = False):
-        user = self.api.get_user()
-        self._crawl_user_repos(user, callback, skip, remote_only, cleanup = True)
-
-    def crawl_individual_public_repo(self, owner, name, callback, remote_only = False, cleanup = True):
-        user = self.api.get_user(login = owner)
+    def crawl_individual_repo(self, name, callback, remote_only = False, cleanup = True):
+        user = self.api.get_user(login = self.login)
         repo = user.get_repo(name)
         self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
-    def crawl_individual_authorized_repo(self, name, callback, remote_only = False, cleanup = True):
-        user = self.api.get_user()
-        repo = user.get_repo(name)
-        self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
-
-    def crawl_individual_public_commit(self, repo_owner, repo_name, commit_sha, callback, remote_only = False, cleanup = True):
-        repo = self.api.get_user(login = repo_owner).get_repo(repo_name)
+    def crawl_individual_commit(self, repo_name, commit_sha, callback, remote_only = False, cleanup = True):
+        repo = self.api.get_user(login = self.login).get_repo(repo_name)
         if remote_only:
             callback(repo.full_name, repo.get_commit(commit_sha))
         else:
-            with ClonedRepository(repo, self.access_token, self.clone_config, cleanup = cleanup) as local_repo:
-                callback(repo.full_name, local_repo.commit(commit_sha))
-
-    def crawl_individual_authorized_commit(self, repo_name, commit_sha, callback, remote_only = False, cleanup = True):
-        repo = self.api.get_user().get_repo(repo_name)
-        if remote_only:
-            callback(repo.full_name, repo.get_commit(commit_sha))
-        else:
-            with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
+            with ClonedRepository(repo, self.access_token, self.config, self.keepalive, cleanup) as local_repo:
                 callback(repo.full_name, local_repo.commit(commit_sha))
 
     def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
@@ -117,7 +66,7 @@ class GithubCommitCrawler(object):
             if not next(all_commits.__iter__(), None): #totalCount doesn't work
                 LOGGER.debug('Skipping repo "{}" because user {} has no commits on it'.format(repo.full_name, user.login))
                 return
-            with ClonedRepository(repo, self.access_token, self.clone_config, cleanup) as local_repo:
+            with ClonedRepository(repo, self.access_token, self.config, self.keepalive, cleanup) as local_repo:
                 for commit in all_commits:
                     callback(repo.full_name, local_repo.commit(commit.sha))
 

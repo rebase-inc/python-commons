@@ -21,11 +21,12 @@ class MissingLanguageSupport(ParserError):
         return 'Unsupported language: {}'.format(self.language)
 
 class UnparsableCode(ParserError):
-    
-    def __init__(self, language, url):
+
+    def __init__(self, language, url, reason = 'Unknown Reason'):
         super().__init__()
         self.url = url
+        self.reason = reason
         self.language = language
 
     def __str__(self):
-        return self.url 
+        return '{self.url} - ({self.reason})'.format(self = self)

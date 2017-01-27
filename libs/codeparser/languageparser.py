@@ -35,7 +35,7 @@ class LanguageParser(metaclass = abc.ABCMeta):
             if response and 'error' not in response:
                 break
         else:
-            raise exceptions.UnparsableCode(self.language, context['url'])
+            raise exceptions.UnparsableCode(self.language, context['url'], response['error'] if response else None)
         self.parsers.insert(0, self.parsers.pop(index))
         return response
 
