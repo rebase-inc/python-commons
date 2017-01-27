@@ -1,27 +1,9 @@
 import pickle
 import logging
 import psycopg2
-import functools
-import collections
 
 from . import Population
-from . import Ranking
-
-class NestedDefaultDict(collections.defaultdict):
-
-    def __init__(self, depth = 2, leaf_factory = float):
-        self.depth = depth
-        nested = functools.partial(leaf_factory)
-        for _ in range(self.depth - 1):
-            nested = functools.partial(collections.defaultdict, nested)
-        super().__init__(nested)
-
-    def set_item(self, keys, value):
-        dic = self
-        for key in keys[:-1]:
-            dic = dic[key]
-        dic[keys[-1]] = value
-
+from . import Ranking, NestedKnowledgeRanking
 
 class PostgresPopulation(Population):
 
@@ -48,12 +30,13 @@ class PostgresPopulation(Population):
         raise NotImplementedError()
 
     def add_user_ranking(self, username, ranking):
-        nested = NestedDefaultDict(depth = self.depth, leaf_factory = float)
+        nested = NestedKnowledgeRanking(knowledge_depth = self.depth, leaf_factory = float)
         for name, knowledge in ranking.items():
             nested.set_item(name.split('.'), knowledge)
+        nested = nested.to_dict()
         with psycopg2.connect(dbname = self.dbname, user = self.dbuser, password = self.dbpassword, host = self.dbhost) as connection:
             with connection.cursor() as cursor:
-                cursor.execute('SELECT id FROM github_user WHERE login = %(github_id)s', {'github_id': self.username})
+                cursor.execute('SELECT id FROM github_user WHERE login = %(github_id)s', {'github_id': username})
                 github_user_id = cursor.fetchone()[0]
                 cursor.execute('SELECT user_id FROM github_account WHERE github_user_id = %(github_user_id)s', {'github_user_id': github_user_id})
                 user_id = cursor.fetchone()[0]

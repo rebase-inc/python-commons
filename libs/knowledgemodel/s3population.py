@@ -40,10 +40,10 @@ class S3Population(Population):
             self._bucket = boto3.resource('s3', **self.config).Bucket(self.bucket_name)
         return self._bucket
 
-    def calculate_rankings(self, knowlege):
+    def calculate_rankings(self, knowledge):
         rankings = dict()
         for name, score in knowledge.items():
-            rankings[name] = _calculate_ranking(self, score, *name.split('.'))
+            rankings[name] = self._calculate_ranking(score, *name.split('.'))
         return rankings
 
     def _calculate_ranking(self, score, *name):
