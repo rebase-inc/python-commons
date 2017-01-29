@@ -1,7 +1,4 @@
 #!/bin/sh
-for dir in /usr/src/app/libs/*/ ; do
-  if [ -e "$dir/setup.py" ] ; then
-    cd $dir
-    python setup.py --quiet bdist_wheel --universal --dist-dir /usr/src/app/build
-  fi
-done
+cd libs
+find . -type d -mindepth 1 -exec basename {} \; | \
+xargs -I {} python {}_setup.py bdist_wheel --universal --dist-dir /usr/src/app/wheels
