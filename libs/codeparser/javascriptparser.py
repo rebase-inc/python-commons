@@ -13,7 +13,7 @@ class JavascriptParser(LanguageParser):
     def __init__(self, callback):
         super().__init__(callback)
         self.parsers = []
-        self.parsers.append(BlockingTcpClient(PARSER_HOST, PARSER_PORT, timeout = 60))
+        self.parsers.append(BlockingTcpClient(PARSER_HOST, PARSER_PORT, timeout = 120))
 
     def get_context(self, repo_name, commit, path):
         return super().get_context(repo_name, commit, path)
@@ -24,5 +24,5 @@ class JavascriptParser(LanguageParser):
     @property
     def relevance_checker(self):
         if not hasattr(self, '_relevance_checker'):
-            self._relevance_checker = BlockingTcpClient(IMPACT_HOST, IMPACT_PORT, timeout = 60)
+            self._relevance_checker = BlockingTcpClient(IMPACT_HOST, IMPACT_PORT, timeout = 20)
         return self._relevance_checker
