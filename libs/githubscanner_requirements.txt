@@ -1,4 +1,0 @@
-rq
-codeparser
-githubcrawler
-knowledgemodel
