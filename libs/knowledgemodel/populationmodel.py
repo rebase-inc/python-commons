@@ -3,10 +3,6 @@ import abc
 class Population(metaclass = abc.ABCMeta):
 
     @abc.abstractmethod
-    def user_knowledge_exists(self, username, version = None):
-        pass
-
-    @abc.abstractmethod
     def user_ranking_exists(self, username, version = None):
         pass
 

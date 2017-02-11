@@ -3,6 +3,7 @@ import git
 import time
 import shutil
 import socket
+import hashlib
 import logging
 from typing import Callable, Any
 from datetime import datetime
@@ -29,11 +30,16 @@ class GithubCommitCrawler(object):
         self.config = config
         self.api = RateLimitAwareGithubAPI(login_or_token = access_token)
         self.keepalive = keepalive
-        self.login = login or GithubObject.NotSet 
+        self.login = login or GithubObject.NotSet
 
     @property
     def authorized_login(self):
         return self.api.get_user().login
+
+    def hash(self, skip = lambda repo: False):
+        h = hashlib.sha256()
+        self.crawl_repos(lambda name, commit: h.update(commit.sha.encode('utf-8')), skip, remote_only = True)
+        return h.hexdigest()
 
     def crawl_repos(self, callback, skip = lambda repo: false, remote_only = False):
         user = self.api.get_user(login = self.login)

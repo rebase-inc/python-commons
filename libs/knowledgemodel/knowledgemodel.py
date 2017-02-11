@@ -16,9 +16,13 @@ REPETITION_PENALTY = float(os.environ['REPETITION_PENALTY'])
 class Knowledge(collections.defaultdict):
     VERSION = '1'
 
-    def __init__(self, version = None, **kwargs):
+    def __init__(self, user_hash, version = None, **kwargs):
         self.version = version or self.VERSION
+        self.user_hash = user_hash
         super().__init__(list, **kwargs)
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.version == other.version and self.user_hash == other.user_hash
 
     def add_reference(self, *args, date = None, count = 1) -> None:
         if args[0] == PRIVATE_KEY:
@@ -42,9 +46,9 @@ class Knowledge(collections.defaultdict):
             name += (UNKNOWN_KEY, ) * (depth - len(name)) # pad to make sure args is of at least length "depth")
             name = '.'.join(name)
             score = round(self.penalize_repetition(sum(ref.activation for ref in references)), 4)
-            normalized[name] += score 
+            normalized[name] += score
             for module in itertools.accumulate(name.split('.')[0:depth - 1], lambda a, b: '{}.{}'.format(a, b)):
-                normalized['{}.{}'.format(module, OVERALL_KEY)] += score 
+                normalized['{}.{}'.format(module, OVERALL_KEY)] += score
         return normalized
 
 

@@ -20,9 +20,6 @@ class PostgresPopulation(Population):
     def add_user_knowledge(self, username, knowledge):
         raise NotImplementedError()
 
-    def user_knowledge_exists(self, username, version = None):
-        raise NotImplementedError()
-
     def user_ranking_exists(self, username, version = None):
         raise NotImplementedError()
 

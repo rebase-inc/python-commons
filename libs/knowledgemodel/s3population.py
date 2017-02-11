@@ -28,7 +28,7 @@ class S3Population(Population):
 
     def __init__(self, bucket: str, config: dict = None, depth: int = 2):
         self.bucket_name = bucket
-        self.config = S3Config(**config)
+        self.config = S3Config(**config or {})
         self.depth = depth
         self.knowledge_prefix = 'leaderboard/' + (depth * '{}/')
         self.user_key = 'users/{}'
@@ -57,27 +57,18 @@ class S3Population(Population):
 
         return Ranking(target_population, score)
 
-    def user_knowledge_exists(self, username, version = None):
-        s3object = self.bucket.Object(self.user_key.format(username))
-        try:
-            knowledge = self.get_user_knowledge(username)
-            if version:
-                return knowledge.version == version
-            return True
-        except botocore.exceptions.ClientError as exc:
-            return False
-
     def add_user_knowledge(self, username, knowledge):
         if not isinstance(knowledge, Knowledge):
             raise TypeError('Cant convert {} to {}'.format(type(knowledge), Knowledge.__name__))
         LOGGER.debug('Writing knowledge for user {} to s3'.format(username))
 
         version = knowledge.version
+        user_hash = knowledge.user_hash
         knowledge = knowledge.normalize(depth = self.depth)
-        
+
         start = time.time()
         obj = self.bucket.Object(self.user_key.format(username))
-        etag = obj.put(Body = json.dumps(dict(version = version, knowledge = knowledge)))['ETag']
+        etag = obj.put(Body = json.dumps(dict(user_hash = user_hash, version = version, knowledge = knowledge)))['ETag']
         all_objects = { etag: obj }
 
         for name, score in knowledge.items():
@@ -93,8 +84,12 @@ class S3Population(Population):
         LOGGER.debug('Writing knowledge to s3 took {} seconds'.format(time.time() - start))
 
     def get_user_knowledge(self, username):
-        body = json.loads(self.bucket.Object(self.user_key.format(username)).get()['Body'].read().decode())
-        return Knowledge(version = body['version'], **body['knowledge'])
+        try:
+            body = json.loads(self.bucket.Object(self.user_key.format(username)).get()['Body'].read().decode())
+            user_hash = body['user_hash'] if 'user_hash' in body else None
+            return Knowledge(user_hash, version = body['version'], **body['knowledge'])
+        except botocore.exceptions.ClientError:
+            return None
 
     def add_user_ranking(self, username, ranking):
         raise NotImplementedError()
@@ -104,10 +99,11 @@ class S3Population(Population):
 
 if __name__ == '__main__':
     population = S3Population(os.environ['S3_KNOWLEDGE_BUCKET'])
-    print('User knowledge {} exist'.format('does' if population.user_knowledge_exists('andrewmillspaugh') else 'doesn\'t'))
+    print('User knowledge {} exist'.format('does' if population.get_user_knowledge('andrewmillspaugh') else 'doesn\'t'))
     ranking = population._calculate_ranking(10.2, 'javascript', 'react')
     print('Percentile for javascript.react knowledge of 10.2 is top {:.2%}'.format(ranking.rank / ranking.population))
-    k = Knowledge()
+    k = Knowledge('fakehash')
+    print('Can we test knowledge equality? {}'.format('yes' if k == k else 'no'))
     k.add_reference('python', 'socket', 'recv', date = datetime.date.today(), count = 5)
     k.add_reference('python', 'socket', 'send', date = datetime.date.today(), count = 5)
     population.add_user_knowledge('somefakedude', k)

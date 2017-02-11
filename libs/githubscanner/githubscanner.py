@@ -15,7 +15,7 @@ class GithubCodeScanner(object):
         self.timeout      = timeout
         self.crawler      = GithubCommitCrawler(token, clone_config, github_id, keepalive = self._rq_keepalive)
         self.github_id    = github_id or self.crawler.authorized_login
-        self.knowledge    = Knowledge()
+        self.knowledge    = Knowledge(user_hash = self.crawler.hash())
         self.s3population = S3Population(s3bucket, s3config, depth = knowledge_depth)
         self.parser       = CodeParser(callback = self.knowledge.add_reference)
         self.progress     = MeasuredJobProgress()
@@ -38,10 +38,11 @@ class GithubCodeScanner(object):
     def _rq_keepalive(self, *args, **kwargs):
         # has extra arguments so that we can pass it around more easily
         # this takes less than one microsecond per call, so it's okay that we call it very often
-        signal.alarm(self.timeout)
+        # signal.alarm(self.timeout)
+        pass
 
     def scan_all(self, force_overwrite = False):
-        if self.s3population.user_knowledge_exists(self.github_id, self.knowledge.version) and not force_overwrite:
+        if self.s3population.get_user_knowledge(self.github_id) == self.knowledge and not force_overwrite:
             LOGGER.info('User "{}" scan is up to date. Skipping scan'.format(self.github_id))
             return
         else:
