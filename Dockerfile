@@ -10,7 +10,7 @@ RUN apk --quiet update && \
         python3-dev \
         docker
 
-RUN pyvenv /venv && \
+RUN python3.6 -m venv /venv && \
     source /venv/bin/activate && \
     pip --quiet install --upgrade pip && \
     pip --quiet install \
@@ -19,13 +19,14 @@ RUN pyvenv /venv && \
       passlib \
       twisted \
       python-magic && \
-    mkdir -p /usr/src/app && \
-    mkdir -p /usr/src/app/build
+    mkdir -p /usr/src/app/wheels /tmp/egg_info /tmp/build
 
 WORKDIR /usr/src/app
 
-COPY ./libs ./libs
-COPY ./build_packages.sh ./build_packages.sh
-RUN source /venv/bin/activate && ./build_packages.sh && rm -rf /usr/src/app/libs
+COPY libs libs
 
-CMD ["/venv/bin/pypi-server", "--server", "twisted", "--overwrite", "-p", "8080", "-P", ".", "-a", ".", "/usr/src/app/build"]
+COPY build_packages.sh build_packages.sh
+
+RUN source /venv/bin/activate && ./build_packages.sh
+
+CMD ["/venv/bin/pypi-server", "--server", "twisted", "--overwrite", "-p", "8080", "-P", ".", "-a", ".", "/usr/src/app/wheels"]
