@@ -3,32 +3,51 @@ from shutil import rmtree
 
 
 all_requirements = {
-    'asynctcp': ( 'curio==0.4', ),
-    'authgen': ( 'PyGithub', ),
-    'codeparser': ( 'asynctcp', ),
-    'githubcrawler': (
-        'PyGithub',
-        'gitpython',
-        'frozendict',
-    ),
-    'githubscanner': (
-        'rq',
-        'codeparser',
-        'githubcrawler',
-        'knowledgemodel',
-    ),
-    'knowledgemodel': (
-        'gitpython',
-        'stdlib-list',
-        'pip',
-        'PyGithub',
-        'python-magic',
-        'asynctcp',
-        'redis',
-        'rq',
-        'rsyslog',
-    ),
-    'rsyslog': tuple(),
+    'asynctcp': {
+        'requires': (
+            'curio',
+            'rsyslog'
+        ),
+        'dependency_links': ['https://github.com/dabeaz/curio/tarball/master'],
+    },
+    'authgen': {
+        'requires': ( 'PyGithub', ),
+    },
+    'codeparser': {
+        'requires': ( 'asynctcp', ),
+    },
+    'githubcrawler': {
+        'requires': (
+            'PyGithub',
+            'gitpython',
+            'frozendict',
+        ),
+    },
+    'githubscanner': {
+        'requires': (
+            'rq',
+            'codeparser',
+            'githubcrawler',
+            'knowledgemodel',
+        ),
+    },
+    'knowledgemodel': {
+        'requires': (
+            'boto3',
+            'gitpython',
+            'pip',
+            'psycopg2',
+            'PyGithub',
+            'redis',
+            'rq',
+            'stdlib-list',
+            'asynctcp',
+            'rsyslog',
+        )
+    },
+    'rsyslog': {
+        'requires':tuple(),
+    },
 }
 
 
@@ -45,8 +64,9 @@ for package, requirements in all_requirements.items():
     setup(
         name=package, 
         version='0.0.1',
-        install_requires=requirements,
-        packages=find_packages(include=(package,))
+        install_requires=requirements['requires'],
+        packages=find_packages(include=(package,)),
+        dependency_links=requirements['dependency_links'] if 'dependency_links' in requirements else [],
     )
     previous_pkg = package
 
