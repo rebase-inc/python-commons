@@ -95,7 +95,7 @@ class AsyncTcpCallbackServer(object):
         parallel = True,
         cpus = None,
         search_path = None,
-        worker_subprocess_timeout = 5,
+        worker_subprocess_timeout = 600,
     ):
         '''
             address:        the address the listening socket will bind to.
