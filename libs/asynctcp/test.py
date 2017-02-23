@@ -249,7 +249,7 @@ class Parallel(TestCase):
         self.many_clients(Parallel.sleep_1_echo, 4, 1, 5, 5)
 
     def test_a(self):
-        # that's 900 requests per second using 2 cores on a MacBook 2016
+        # that's 900 requests per second using 2 cores on a MacBook Early 2015
         self.many_clients(Parallel.echo, 2, 2, 450, None)
 
             

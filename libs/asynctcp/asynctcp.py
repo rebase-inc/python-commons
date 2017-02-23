@@ -62,6 +62,7 @@ async def worker_main(
     async with await channel.connect(authkey=authkey) as connection:
         while True:
             try:
+                handler_task = None
                 request = await connection.recv()
                 try:
                     handler_task  = await spawn(handler(request))
@@ -72,6 +73,8 @@ async def worker_main(
                 finally:
                     await connection.send(response)
             except CancelledError:
+                if handler_task:
+                    await handler_task.cancel()
                 break
 
 
