@@ -60,16 +60,16 @@ class GithubCommitCrawler(object):
 
     def _crawl_user_repos(self, user, callback, skip, remote_only, cleanup):
         repos = filterfalse(skip, filterfalse(lambda r: r.fork, user.get_repos(type = 'all')))
-        for repo in self._handle_github_exceptions(repos):
+        for repo in self._handle_github_exceptions(repos, context=f'of repos for {user}'):
             self._crawl_user_repo(user, repo, callback, remote_only, cleanup)
 
     def _crawl_user_repo(self, user, repo, callback, remote_only, cleanup):
         all_commits = repo.get_commits(author = user.login)
         if remote_only:
-            for commit in all_commits:
+            for commit in self._handle_github_exceptions(iter(all_commits), context=f'of {repo} for {user}'):
                 callback(repo.full_name, commit)
         else:
-            if not next(all_commits.__iter__(), None): #totalCount doesn't work
+            if not next(iter(all_commits), None): #totalCount doesn't work
                 LOGGER.debug('Skipping repo "{}" because user {} has no commits on it'.format(repo.full_name, user.login))
                 return
             with ClonedRepository(repo, self.access_token, self.config, self.keepalive, cleanup) as local_repo:
@@ -77,14 +77,14 @@ class GithubCommitCrawler(object):
                     callback(repo.full_name, local_repo.commit(commit.sha))
 
     @classmethod
-    def _handle_github_exceptions(cls, generator):
+    def _handle_github_exceptions(cls, generator, context=None):
         while True:
             try:
                 yield next(generator)
             except StopIteration:
                 raise
             except GithubException as exc:
-                LOGGER.error('Crawling repo failed! {}'.format(str(exc.data)))
+                LOGGER.exception(f'Github error during pagination {context}')
 
 class RateLimitAwareGithubAPI(Github):
 
