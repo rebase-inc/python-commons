@@ -7,8 +7,7 @@ RUN apk --quiet update && \
         gcc \
         musl-dev \
         py-virtualenv \
-        python3-dev \
-        docker
+        python3-dev
 
 RUN python3.6 -m venv /venv && \
     source /venv/bin/activate && \
